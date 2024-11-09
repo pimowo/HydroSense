@@ -205,10 +205,10 @@ public:
 // Główna klasa aplikacji
 class HydroSenseApp {
 private:
-    // Stałe czasowe
-    static constexpr unsigned long UPDATE_INTERVAL = 1000;        // ms
-    static constexpr unsigned long MQTT_RETRY_INTERVAL = 5000;    // ms
-    static constexpr unsigned long WIFI_CHECK_INTERVAL = 30000;   // ms
+    // Stałe
+    static constexpr unsigned long UPDATE_INTERVAL = 1000; // ms
+    static constexpr unsigned long MQTT_RETRY_INTERVAL = 5000; // ms
+    static constexpr unsigned long WIFI_CHECK_INTERVAL = 30000; // ms
     
     // Stałe MQTT
     const char* MQTT_BROKER = "192.168.1.14";
@@ -222,6 +222,8 @@ private:
     HADevice m_device;
     HAMqtt m_mqtt;
     ESP8266WebServer m_webServer;
+    unsigned long m_lastWiFiCheck;
+    unsigned long m_lastMqttRetry;
 
     // Sensory HA
     HASensor m_haWaterLevelSensor;
@@ -232,11 +234,7 @@ private:
     Settings m_settings;
     WaterLevelSensor m_levelSensor;
     PumpController m_pumpController;
-    
-    // Zmienne czasowe
     unsigned long m_lastUpdateTime;
-    unsigned long m_lastWiFiCheck;
-    unsigned long m_lastMqttRetry;
 
 public:
     HydroSenseApp() :
@@ -247,9 +245,9 @@ public:
         m_haWaterLevelSensor("water_level"),
         m_haWaterLevelPercentSensor("water_level_percent"),
         m_reserveSensor("reserve"),
-        m_lastUpdateTime(0),
         m_lastWiFiCheck(0),
-        m_lastMqttRetry(0)
+        m_lastMqttRetry(0),
+        m_lastUpdateTime(0)
     {
         Serial.println("\n=== HydroSense - Inicjalizacja ===");
         
@@ -268,26 +266,23 @@ public:
     }
 
     void initializePins() {
-        pinMode(PIN_TRIG, OUTPUT);
+        pinMode(PIN_TRIGGER, OUTPUT);
         pinMode(PIN_ECHO, INPUT);
         pinMode(PIN_BUZZER, OUTPUT);
-        pinMode(PIN_PUMP, OUTPUT);
         digitalWrite(PIN_BUZZER, LOW);
-        digitalWrite(PIN_PUMP, LOW);
-        Serial.println("Piny zainicjalizowane");
     }
 
     void welcomeBuzzer() {
+        if (!m_settings.isSoundEnabled()) return;
+        
         digitalWrite(PIN_BUZZER, HIGH);
         delay(100);
         digitalWrite(PIN_BUZZER, LOW);
-        Serial.println("Sygnał powitalny");
     }
 
     void initializeWiFi() {
         WiFi.mode(WIFI_STA);
         WiFi.setSleepMode(WIFI_NONE_SLEEP);
-        WiFi.setOutputPower(20.5); // maksymalna moc nadawania
         delay(100);
         
         Serial.print("\nŁączenie z WiFi");
@@ -317,37 +312,35 @@ public:
     }
 
     void initializeHomeAssistant() {
-        m_device.setName("HydroSense");
-        m_device.setSoftwareVersion("09.11.24");
-        m_device.setManufacturer("PMW");
-        m_device.setModel("HS ESP8266");
-
         m_haWaterLevelSensor.setName("Water Level");
         m_haWaterLevelSensor.setDeviceClass("distance");
         m_haWaterLevelSensor.setUnitOfMeasurement("mm");
-
+        
         m_haWaterLevelPercentSensor.setName("Water Level Percentage");
-        m_haWaterLevelPercentSensor.setIcon("mdi:water-percent");
         m_haWaterLevelPercentSensor.setUnitOfMeasurement("%");
-
+        
         m_reserveSensor.setName("Water Reserve");
         m_reserveSensor.setDeviceClass("problem");
+        
+        connectMQTT();
+    }
 
-        if (connectMQTT()) {
-            publishHAConfig();
-        }
+    void initializeWebServer() {
+        m_webServer.on("/", [this]() {
+            handleRoot();
+        });
+        
+        m_webServer.begin();
+        Serial.println("Serwer WWW uruchomiony");
     }
 
     void initializeOTA() {
-        ArduinoOTA.setHostname("HydroSense");
-        ArduinoOTA.setPassword("admin");
-        
         ArduinoOTA.onStart([]() {
-            Serial.println("Start aktualizacji OTA");
+            Serial.println("Rozpoczęto aktualizację OTA");
         });
         
         ArduinoOTA.onEnd([]() {
-            Serial.println("\nKoniec aktualizacji OTA");
+            Serial.println("\nZakończono aktualizację OTA");
         });
         
         ArduinoOTA.onProgress([](unsigned int progress, unsigned int total) {
@@ -356,43 +349,78 @@ public:
         
         ArduinoOTA.onError([](ota_error_t error) {
             Serial.printf("Błąd[%u]: ", error);
-            switch (error) {
-                case OTA_AUTH_ERROR: Serial.println("Auth Failed"); break;
-                case OTA_BEGIN_ERROR: Serial.println("Begin Failed"); break;
-                case OTA_CONNECT_ERROR: Serial.println("Connect Failed"); break;
-                case OTA_RECEIVE_ERROR: Serial.println("Receive Failed"); break;
-                case OTA_END_ERROR: Serial.println("End Failed"); break;
-            }
+            if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
+            else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
+            else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
+            else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
+            else if (error == OTA_END_ERROR) Serial.println("End Failed");
         });
         
         ArduinoOTA.begin();
         Serial.println("OTA gotowe");
     }
 
-    void initializeWebServer() {
-        m_webServer.on("/", [this]() {
-            float waterLevel = m_levelSensor.measureDistance();
-            String html = "<html><body>";
-            html += "<h1>HydroSense</h1>";
-            html += "<p>Poziom wody: " + String(waterLevel) + " mm</p>";
-            html += "<p>Stan MQTT: " + String(m_mqtt.isConnected() ? "Połączony" : "Rozłączony") + "</p>";
-            html += "</body></html>";
-            m_webServer.send(200, "text/html", html);
-        });
+    void run() {
+        unsigned long currentTime = millis();
+        
+        // Sprawdzanie i obsługa WiFi
+        if (currentTime - m_lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
+            checkWiFiConnection();
+            m_lastWiFiCheck = currentTime;
+        }
 
-        m_webServer.begin();
-        Serial.println("Serwer HTTP uruchomiony");
+        // Jeśli WiFi jest połączone, obsługuj MQTT i inne usługi
+        if (WiFi.status() == WL_CONNECTED) {
+            if (!m_mqtt.isConnected()) {
+                if (currentTime - m_lastMqttRetry >= MQTT_RETRY_INTERVAL) {
+                    connectMQTT();
+                    m_lastMqttRetry = currentTime;
+                }
+            }
+            
+            m_mqtt.loop();
+            ArduinoOTA.handle();
+            m_webServer.handleClient();
+        }
+
+        // Aktualizacja stanu urządzenia
+        if (currentTime - m_lastUpdateTime >= UPDATE_INTERVAL) {
+            update();
+            m_lastUpdateTime = currentTime;
+        }
+
+        yield();
+    }
+
+    void handleRoot() {
+        String html = "<html><body>";
+        html += "<h1>HydroSense</h1>";
+        
+        float waterLevel = m_levelSensor.measureDistance();
+        float percentage = calculateWaterPercentage(waterLevel);
+        
+        html += "<p>Poziom wody: " + String(waterLevel, 1) + " mm (" + String(percentage, 1) + "%)</p>";
+        html += "<p>Stan rezerwy: " + String(m_settings.checkReserveState(waterLevel) ? "TAK" : "NIE") + "</p>";
+        
+        html += "</body></html>";
+        
+        m_webServer.send(200, "text/html", html);
     }
 
     bool connectMQTT() {
         if (!m_mqtt.isConnected()) {
-            Serial.print("Łączenie z MQTT...");
+            Serial.print("Łączenie z MQTT (");
+            Serial.print(MQTT_BROKER);
+            Serial.print(")...");
+            
             if (m_mqtt.begin(MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASSWORD)) {
-                Serial.println("OK");
+                Serial.println("Połączono!");
                 publishHAConfig();
+                float waterLevel = m_levelSensor.measureDistance();
+                updateHomeAssistantSensors(waterLevel);
                 return true;
             } else {
-                Serial.println("BŁĄD");
+                Serial.println("Błąd!");
                 return false;
             }
         }
@@ -402,25 +430,25 @@ public:
     void publishHAConfig() {
         if (m_mqtt.isConnected()) {
             String config;
-            String topic;
-
-            // Konfiguracja water_level
+            
+            // Konfiguracja czujnika poziomu wody
             config = createSensorConfig("water_level", "Water Level", "mm");
-            topic = "homeassistant/sensor/hydrosense/water_level/config";
-            m_mqtt.publish(topic.c_str(), config.c_str(), true);
-
-            // Konfiguracja water_level_percent
+            m_mqtt.publish("homeassistant/sensor/hydrosense/water_level/config", config.c_str());
+            
+            // Konfiguracja czujnika procentowego
             config = createSensorConfig("water_level_percent", "Water Level Percentage", "%");
-            topic = "homeassistant/sensor/hydrosense/water_level_percent/config";
-            m_mqtt.publish(topic.c_str(), config.c_str(), true);
-
-            // Konfiguracja reserve
-            topic = "homeassistant/binary_sensor/hydrosense/reserve/config";
+            m_mqtt.publish("homeassistant/sensor/hydrosense/water_level_percent/config", config.c_str());
+            
+            // Konfiguracja czujnika rezerwy
             config = createReserveSensorConfig();
-            m_mqtt.publish(topic.c_str(), config.c_str(), true);
-
-            Serial.println("Opublikowano konfigurację HA");
+            m_mqtt.publish("homeassistant/binary_sensor/hydrosense/reserve/config", config.c_str());
         }
+    }
+
+    void update() {
+        float waterLevel = m_levelSensor.measureDistance();
+        updateHomeAssistantSensors(waterLevel);
+        checkAlarmsAndNotifications();
     }
 
     void checkWiFiConnection() {
@@ -444,69 +472,73 @@ public:
         }
     }
 
+    void printSettings() {
+        Serial.println("Aktualne ustawienia:");
+        Serial.printf("- Średnica zbiornika: %.1f mm\n", m_settings.getTankDiameter());
+        Serial.printf("- Wysokość pełna: %.1f mm\n", m_settings.getFullDistance());
+        Serial.printf("- Wysokość pusta: %.1f mm\n", m_settings.getEmptyDistance());
+        Serial.printf("- Próg rezerwy: %.1f mm\n", m_settings.getReserveThreshold());
+        Serial.printf("- Dźwięk włączony: %s\n", m_settings.isSoundEnabled() ? "Tak" : "Nie");
+    }
+
+    String createReserveSensorConfig() {
+        String config = "{";
+        config += "\"name\":\"Water Reserve\",";
+        config += "\"device_class\":\"problem\",";
+        config += "\"state_topic\":\"hydrosense/reserve/state\",";
+        config += "\"unique_id\":\"hydrosense_" + m_deviceId + "_reserve\",";
+        config += "\"device\":{";
+        config += "\"identifiers\":[\"hydrosense_" + m_deviceId + "\"],";
+        config += "\"name\":\"HydroSense\",";
+        config += "\"model\":\"HS ESP8266\",";
+        config += "\"manufacturer\":\"PMW\"";
+        config += "}}";
+        return config;
+    }
+
+    void checkAlarmsAndNotifications() {
+        float waterLevel = m_levelSensor.measureDistance();
+        bool shouldAlarm = waterLevel >= m_settings.getReserveThreshold() && m_settings.isSoundEnabled();
+        
+        digitalWrite(PIN_BUZZER, shouldAlarm ? HIGH : LOW);
+        
+        if (shouldAlarm) {
+            Serial.println("ALARM: Niski poziom wody!");
+        }
+    }
+
     void updateHomeAssistantSensors(float waterLevel) {
         if (m_mqtt.isConnected()) {
-            String payload;
-            
-            // Aktualizacja water_level
-            payload = "{\"value\":" + String(waterLevel, 1) + "}";
-            m_mqtt.publish("hydrosense/water_level/state", payload.c_str());
+            String payload = String(waterLevel, 1);
+            m_haWaterLevelSensor.setValue(payload.c_str());
 
-            // Aktualizacja water_level_percent
             float percentage = calculateWaterPercentage(waterLevel);
-            payload = "{\"value\":" + String(percentage, 1) + "}";
-            m_mqtt.publish("hydrosense/water_level_percent/state", payload.c_str());
+            payload = String(percentage, 1);
+            m_haWaterLevelPercentSensor.setValue(payload.c_str());
 
-            // Aktualizacja reserve
             bool isInReserve = m_settings.checkReserveState(waterLevel);
-            m_mqtt.publish("hydrosense/reserve/state", isInReserve ? "ON" : "OFF");
+            m_reserveSensor.setState(isInReserve);
+
+            Serial.println("Zaktualizowano dane w HA");
         }
     }
 
-    void update() {
-        float waterLevel = m_levelSensor.measureDistance();
-        
-        if (m_mqtt.isConnected()) {
-            updateHomeAssistantSensors(waterLevel);
-        }
-
-        m_pumpController.update();
-        checkAlarmsAndNotifications();
+    String createSensorConfig(const char* id, const char* name, const char* unit) {
+        String config = "{";
+        config += "\"name\":\"" + String(name) + "\",";
+        config += "\"device_class\":\"" + String(id) + "\",";
+        config += "\"state_topic\":\"hydrosense/" + String(id) + "/state\",";
+        config += "\"unit_of_measurement\":\"" + String(unit) + "\",";
+        config += "\"unique_id\":\"hydrosense_" + m_deviceId + "_" + String(id) + "\",";
+        config += "\"device\":{";
+        config += "\"identifiers\":[\"hydrosense_" + m_deviceId + "\"],";
+        config += "\"name\":\"HydroSense\",";
+        config += "\"model\":\"HS ESP8266\",";
+        config += "\"manufacturer\":\"PMW\"";
+        config += "}}";
+        return config;
     }
 
-    void run() {
-        unsigned long currentTime = millis();
-        
-        // Sprawdzanie WiFi
-        if (currentTime - m_lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
-            checkWiFiConnection();
-            m_lastWiFiCheck = currentTime;
-        }
-
-        // Jeśli WiFi jest połączone
-        if (WiFi.status() == WL_CONNECTED) {
-            // Próba połączenia MQTT jeśli rozłączone
-            if (!m_mqtt.isConnected() && 
-                (currentTime - m_lastMqttRetry >= MQTT_RETRY_INTERVAL)) {
-                connectMQTT();
-                m_lastMqttRetry = currentTime;
-            }
-            
-            m_mqtt.loop();
-            ArduinoOTA.handle();
-            m_webServer.handleClient();
-        }
-
-        // Regularna aktualizacja
-        if (currentTime - m_lastUpdateTime >= UPDATE_INTERVAL) {
-            update();
-            m_lastUpdateTime = currentTime;
-        }
-
-        yield(); // Zapobieganie watchdog reset
-    }
-
-private:
     float calculateWaterPercentage(float waterLevel) {
         float maxLevel = m_settings.getEmptyDistance() - m_settings.getFullDistance();
         if (maxLevel <= 0) return 0.0f;
@@ -514,24 +546,6 @@ private:
         float currentLevel = m_settings.getEmptyDistance() - waterLevel;
         float percentage = (currentLevel / maxLevel) * 100.0f;
         return constrain(percentage, 0.0f, 100.0f);
-    }
-    
-    String createSensorConfig(const char* id, const char* name, const char* unit) {
-        String deviceId = String(ESP.getChipId(), HEX);
-        String config = "{";
-        config += "\"name\":\"" + String(name) + "\",";
-        config += "\"device_class\":\"" + String(id) + "\",";
-        config += "\"state_topic\":\"hydrosense/" + String(id) + "/state\",";
-        config += "\"unit_of_measurement\":\"" + String(unit) + "\",";
-        config += "\"value_template\":\"{{ value_json.value }}\",";
-        config += "\"unique_id\":\"hydrosense_" + deviceId + "_" + String(id) + "\",";
-        config += "\"device\":{";
-        config += "\"identifiers\":[\"hydrosense_" + deviceId + "\"],";
-        config += "\"name\":\"HydroSense\",";
-        config += "\"model\":\"HS ESP8266\",";           // Zmiana modelu
-        config += "\"manufacturer\":\"PMW\"";            // Zmiana producenta
-        config += "}}";
-        return config;
     }
 };
 
