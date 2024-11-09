@@ -13,6 +13,10 @@
 #include <CRC32.h>
 #include <ArduinoHA.h>
 
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
+#define BUILD_DATE TOSTRING(__DATE__)
+
 namespace HydroSense {
 
 // Konfiguracja pinów
@@ -32,12 +36,6 @@ constexpr float TANK_DIAMETER_MAX = 250.0f;          // mm
 // WiFi credentials
 const char* WIFI_SSID = "pimowo";
 const char* WIFI_PASSWORD = "ckH59LRZQzCDQFiUgj";
-
-// MQTT broker details
-// const char* MQTT_BROKER = "192.168.1.14";
-// const int MQTT_PORT = 1883;
-// const char* MQTT_USER = "hydrosense";
-// const char* MQTT_PASSWORD = "hydrosense";
 
 class WaterLevelSensor {
 public:
@@ -211,16 +209,13 @@ private:
     static constexpr unsigned long UPDATE_INTERVAL = 1000; // ms
     static constexpr unsigned long MQTT_RETRY_INTERVAL = 5000; // ms
     
-    // Stałe MQTT
-    const char* MQTT_BROKER = "twoj_broker";
-    const char* MQTT_USER = "twoj_uzytkownik";
-    const char* MQTT_PASSWORD = "twoje_haslo";
+    // Stałe MQTT - użyj wartości z głównego namespace
+    const char* MQTT_BROKER = "192.168.1.14"; // Zaktualizuj na właściwy adres
+    const char* MQTT_USER = "hydrosense";
+    const char* MQTT_PASSWORD = "hydrosense";
 
-    // Piny
-    static constexpr uint8_t PIN_TRIGGER = D1;  // Pin trigger sensora ultradźwiękowego
-    static constexpr uint8_t PIN_ECHO = D2;     // Pin echo sensora ultradźwiękowego
-    static constexpr uint8_t PIN_BUZZER = D5;   // Pin buzzera
-    static constexpr uint8_t PIN_PUMP = D6;     // Pin pompy
+    // Używamy pinów zdefiniowanych w namespace
+    // Nie definiujemy ich ponownie w klasie
 
     // Komponenty sieciowe
     WiFiClient m_wifiClient;
@@ -268,7 +263,7 @@ public:
     }
 
     void initializePins() {
-        pinMode(PIN_TRIGGER, OUTPUT);
+        pinMode(PIN_TRIG, OUTPUT);
         pinMode(PIN_ECHO, INPUT);
         pinMode(PIN_BUZZER, OUTPUT);
         pinMode(PIN_PUMP, OUTPUT);
@@ -307,10 +302,29 @@ public:
 
     void initializeHomeAssistant() {
         // Konfiguracja urządzenia
-        m_device.setName("HydroSense");
-        m_device.setSoftwareVersion("1.0.0");
-        m_device.setManufacturer("DIY");
-        m_device.setModel("HydroSense v1.0");
+        // Konwersja daty kompilacji na format DD.MM.RR
+        char buildDate[9];
+        const char* date = __DATE__; // Format: "Mmm DD YYYY"
+        const char* month = date;
+        int day = atoi(date + 4);
+        int year = atoi(date + 7);
+        
+        snprintf(buildDate, sizeof(buildDate), "%02d.%02d.%02d", 
+                day,
+                (month[0] == 'J' && month[1] == 'a' && month[2] == 'n') ? 1 :
+                (month[0] == 'F') ? 2 :
+                (month[0] == 'M' && month[2] == 'r') ? 3 :
+                (month[0] == 'A' && month[1] == 'p') ? 4 :
+                (month[0] == 'M' && month[2] == 'y') ? 5 :
+                (month[0] == 'J' && month[2] == 'n') ? 6 :
+                (month[0] == 'J' && month[2] == 'l') ? 7 :
+                (month[0] == 'A' && month[2] == 'g') ? 8 :
+                (month[0] == 'S') ? 9 :
+                (month[0] == 'O') ? 10 :
+                (month[0] == 'N') ? 11 : 12,
+                year % 100);
+                
+        m_device.setSoftwareVersion(buildDate);
 
         // Konfiguracja sensorów
         m_haWaterLevelSensor.setName("Water Level");
@@ -370,9 +384,10 @@ public:
 
         m_webServer.on("/api/status", [this]() {
             float waterLevel = m_levelSensor.measureDistance();
+            float percentage = calculateWaterPercentage(waterLevel);
             String json = "{";
             json += "\"water_level\":" + String(waterLevel) + ",";
-            json += "\"water_level_percent\":" + String(calculateWaterPercentage(waterLevel)) + ",";
+            json += "\"water_level_percent\":" + String(percentage) + ",";
             json += "\"mqtt_connected\":" + String(m_mqtt.isConnected()) + ",";
             json += "\"reserve\":" + String(m_settings.checkReserveState(waterLevel));
             json += "}";
@@ -392,31 +407,19 @@ public:
         Serial.printf("- Dźwięk włączony: %s\n", m_settings.isSoundEnabled() ? "Tak" : "Nie");
     }
 
-    String createSensorConfig(const char* id, const char* name, const char* unit) {
-        String deviceId = String(ESP.getChipId(), HEX);
-        String config = "{";
-        config += "\"name\":\"" + String(name) + "\",";
-        config += "\"device_class\":\"" + String(id) + "\",";
-        config += "\"state_topic\":\"hydrosense/" + String(id) + "/state\",";
-        config += "\"unit_of_measurement\":\"" + String(unit) + "\",";
-        config += "\"value_template\":\"{{ value_json.value }}\",";
-        config += "\"unique_id\":\"hydrosense_" + deviceId + "_" + String(id) + "\",";
-        config += "\"device\":{";
-        config += "\"identifiers\":[\"hydrosense_" + deviceId + "\"],";
-        config += "\"name\":\"HydroSense\",";
-        config += "\"model\":\"HydroSense v1.0\",";
-        config += "\"manufacturer\":\"DIY\"";
-        config += "}}";
-        return config;
-    }
-
     void publishHAConfig() {
         if (m_mqtt.isConnected()) {
             String waterLevelTopic = "homeassistant/sensor/hydrosense/water_level/config";
             String config = createSensorConfig("water_level", "Water Level", "mm");
             m_mqtt.publish(waterLevelTopic.c_str(), config.c_str(), true);
             
-            // Konfiguracja pozostałych sensorów...
+            String percentTopic = "homeassistant/sensor/hydrosense/water_level_percent/config";
+            config = createSensorConfig("water_level_percent", "Water Level Percentage", "%");
+            m_mqtt.publish(percentTopic.c_str(), config.c_str(), true);
+            
+            String reserveTopic = "homeassistant/binary_sensor/hydrosense/reserve/config";
+            config = createSensorConfig("reserve", "Water Reserve", "");
+            m_mqtt.publish(reserveTopic.c_str(), config.c_str(), true);
         }
     }
 
@@ -424,6 +427,7 @@ public:
         if (!m_mqtt.isConnected()) {
             if (m_mqtt.begin(MQTT_BROKER, MQTT_USER, MQTT_PASSWORD)) {
                 Serial.println("Połączono z brokerem MQTT");
+                publishHAConfig();
                 return true;
             } else {
                 Serial.println("Błąd połączenia z MQTT");
@@ -435,13 +439,11 @@ public:
 
     void updateHomeAssistantSensors(float waterLevel) {
         if (m_mqtt.isConnected()) {
-            m_haWaterLevelSensor.setValue(String(waterLevel, 1).c_str());
-
             float percentage = calculateWaterPercentage(waterLevel);
+            
+            m_haWaterLevelSensor.setValue(String(waterLevel, 1).c_str());
             m_haWaterLevelPercentSensor.setValue(String(percentage, 1).c_str());
-
-            bool isInReserve = m_settings.checkReserveState(waterLevel);
-            m_reserveSensor.setState(isInReserve);
+            m_reserveSensor.setState(m_settings.checkReserveState(waterLevel));
         }
     }
 
@@ -487,8 +489,31 @@ public:
 
 private:
     float calculateWaterPercentage(float waterLevel) {
-        // Implementacja obliczania procentów...
-        return 0.0f; // Tymczasowo
+        float maxLevel = m_settings.getEmptyDistance() - m_settings.getFullDistance();
+        if (maxLevel <= 0) return 0.0f;
+        
+        float currentLevel = m_settings.getEmptyDistance() - waterLevel;
+        float percentage = (currentLevel / maxLevel) * 100.0f;
+        
+        return constrain(percentage, 0.0f, 100.0f);
+    }
+    
+    String createSensorConfig(const char* id, const char* name, const char* unit) {
+        String deviceId = String(ESP.getChipId(), HEX);
+        String config = "{";
+        config += "\"name\":\"" + String(name) + "\",";
+        config += "\"device_class\":\"" + String(id) + "\",";
+        config += "\"state_topic\":\"hydrosense/" + String(id) + "/state\",";
+        config += "\"unit_of_measurement\":\"" + String(unit) + "\",";
+        config += "\"value_template\":\"{{ value_json.value }}\",";
+        config += "\"unique_id\":\"hydrosense_" + deviceId + "_" + String(id) + "\",";
+        config += "\"device\":{";
+        config += "\"identifiers\":[\"hydrosense_" + deviceId + "\"],";
+        config += "\"name\":\"HydroSense\",";
+        config += "\"model\":\"HS ESP8266\",";           // Zmiana modelu
+        config += "\"manufacturer\":\"PMW\"";            // Zmiana producenta
+        config += "}}";
+        return config;
     }
 };
 
