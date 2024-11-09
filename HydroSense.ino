@@ -320,7 +320,7 @@ private:
 
     void publishHAConfig() {
         // Unikalny identyfikator urządzenia
-        String deviceId = "hydrosense_" + String(ESP.getChipId());
+        String deviceId = String(ESP.getChipId(), HEX);
         
         // Konfiguracja urządzenia
         String device_config = "{\"identifiers\":[\"" + deviceId + "\"],"
@@ -329,43 +329,45 @@ private:
                             "\"manufacturer\":\"DIY\","
                             "\"sw_version\":\"1.0.0\"}";
 
-        // Sensor poziomu wody (mm)
+        // Topic dla sensora poziomu wody
+        String waterLevelTopic = "homeassistant/sensor/" + deviceId + "/water_level/config";
+        
+        // Konfiguracja sensora poziomu wody
         String config = "{\"name\":\"Water Level\","
                       "\"device_class\":\"distance\","
-                      "\"state_topic\":\"hydrosense/" + deviceId + "/water_level\","
+                      "\"state_topic\":\"hydrosense/sensor/" + deviceId + "/water_level\","
                       "\"unit_of_measurement\":\"mm\","
-                      "\"value_template\":\"{{ value | float }}\","
+                      "\"value_template\":\"{{ value_json }}\","
                       "\"unique_id\":\"" + deviceId + "_water_level\","
                       "\"device\":" + device_config + "}";
 
-        mqtt.publish("homeassistant/sensor/hydrosense/water_level/config", 
-                    config.c_str(), 
-                    true);
+        mqtt.publish(waterLevelTopic.c_str(), config.c_str(), true);
 
-        // Sensor procentowy
+        // Topic dla sensora procentowego
+        String percentTopic = "homeassistant/sensor/" + deviceId + "/water_level_percent/config";
+        
+        // Konfiguracja sensora procentowego
         config = "{\"name\":\"Water Level Percentage\","
-                "\"state_topic\":\"hydrosense/" + deviceId + "/water_level_percent\","
+                "\"icon\":\"mdi:water-percent\","
+                "\"state_topic\":\"hydrosense/sensor/" + deviceId + "/water_level_percent\","
                 "\"unit_of_measurement\":\"%\","
-                "\"value_template\":\"{{ value | float }}\","
+                "\"value_template\":\"{{ value_json }}\","
                 "\"unique_id\":\"" + deviceId + "_water_level_percent\","
                 "\"device\":" + device_config + "}";
 
-        mqtt.publish("homeassistant/sensor/hydrosense/water_level_percent/config", 
-                    config.c_str(), 
-                    true);
+        mqtt.publish(percentTopic.c_str(), config.c_str(), true);
 
-        // Binary sensor rezerwy
-        config = "{\"name\":\"Water Reserve Status\","
+        // Topic dla sensora rezerwy
+        String reserveTopic = "homeassistant/binary_sensor/" + deviceId + "/reserve/config";
+        
+        // Konfiguracja sensora rezerwy
+        config = "{\"name\":\"Water Reserve\","
                 "\"device_class\":\"problem\","
-                "\"state_topic\":\"hydrosense/" + deviceId + "/reserve\","
-                "\"payload_on\":\"ON\","
-                "\"payload_off\":\"OFF\","
+                "\"state_topic\":\"hydrosense/binary_sensor/" + deviceId + "/reserve\","
                 "\"unique_id\":\"" + deviceId + "_reserve\","
                 "\"device\":" + device_config + "}";
 
-        mqtt.publish("homeassistant/binary_sensor/hydrosense/reserve/config", 
-                    config.c_str(), 
-                    true);
+        mqtt.publish(reserveTopic.c_str(), config.c_str(), true);
 
         Serial.println("Opublikowano konfigurację HA");
     }
@@ -465,24 +467,23 @@ private:
 
     void updateHomeAssistantSensors(float waterLevel) {
         if (mqtt.connected()) {
-            String deviceId = "hydrosense_" + String(ESP.getChipId());
+            String deviceId = String(ESP.getChipId(), HEX);
             
-            // Poziom wody w mm
-            mqtt.publish(("hydrosense/" + deviceId + "/water_level").c_str(), 
-                        String(waterLevel, 1).c_str(), 
-                        true);
+            // Przygotowanie topic'ów
+            String waterLevelTopic = "hydrosense/sensor/" + deviceId + "/water_level";
+            String percentTopic = "hydrosense/sensor/" + deviceId + "/water_level_percent";
+            String reserveTopic = "hydrosense/binary_sensor/" + deviceId + "/reserve";
+            
+            // Wysyłanie poziomu wody
+            mqtt.publish(waterLevelTopic.c_str(), String(waterLevel, 1).c_str(), true);
 
-            // Poziom wody w procentach
+            // Wysyłanie procentów
             float percentage = calculateWaterPercentage(waterLevel);
-            mqtt.publish(("hydrosense/" + deviceId + "/water_level_percent").c_str(), 
-                        String(percentage, 1).c_str(), 
-                        true);
+            mqtt.publish(percentTopic.c_str(), String(percentage, 1).c_str(), true);
 
-            // Stan rezerwy
+            // Wysyłanie stanu rezerwy
             bool isInReserve = m_settings.checkReserveState(waterLevel);
-            mqtt.publish(("hydrosense/" + deviceId + "/reserve").c_str(), 
-                        isInReserve ? "ON" : "OFF", 
-                        true);
+            mqtt.publish(reserveTopic.c_str(), isInReserve ? "ON" : "OFF", true);
 
             Serial.printf("Wysłano do HA - poziom: %.1f mm (%.1f%%), rezerwa: %s\n", 
                         waterLevel, percentage, isInReserve ? "ON" : "OFF");
