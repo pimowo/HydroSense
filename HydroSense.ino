@@ -209,7 +209,7 @@ private:
     static constexpr unsigned long UPDATE_INTERVAL = 1000; // ms
     static constexpr unsigned long MQTT_RETRY_INTERVAL = 5000; // ms
     
-    // Stałe MQTT - zmiana na rzeczywiste wartości
+    // Stałe MQTT
     const char* MQTT_BROKER = "192.168.1.14";
     const uint16_t MQTT_PORT = 1883;
     const char* MQTT_USER = "hydrosense";
@@ -217,8 +217,9 @@ private:
 
     // Komponenty sieciowe
     WiFiClient m_wifiClient;
-    HADevice m_device;
-    HAMqtt m_mqtt;
+    String m_deviceId;         // Dodane pole
+    HADevice m_device;         // Dodane pole
+    HAMqtt m_mqtt;            // Dodane pole
     ESP8266WebServer m_webServer;
 
     // Sensory HA
@@ -230,14 +231,13 @@ private:
     Settings m_settings;
     WaterLevelSensor m_levelSensor;
     PumpController m_pumpController;
-    String m_deviceId;
     unsigned long m_lastUpdateTime;
 
 public:
     HydroSenseApp() :
         m_deviceId(String(ESP.getChipId(), HEX)),
         m_device(m_deviceId.c_str()),
-        m_mqtt(m_wifiClient, m_device),
+        m_mqtt(m_wifiClient, m_device, 25),
         m_webServer(80),
         m_haWaterLevelSensor("water_level"),
         m_haWaterLevelPercentSensor("water_level_percent"),
@@ -422,13 +422,23 @@ public:
 
     bool connectMQTT() {
         if (!m_mqtt.isConnected()) {
-            Serial.print("Próba połączenia z MQTT...");
+            Serial.print("Łączenie z MQTT (");
+            Serial.print(MQTT_BROKER);
+            Serial.print(")...");
+            
             if (m_mqtt.begin(MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASSWORD)) {
-                Serial.println("OK");
-                publishHAConfig(); // Publikuj konfigurację po połączeniu
+                Serial.println("Połączono!");
+                
+                // Opublikuj konfigurację po udanym połączeniu
+                publishHAConfig();
+                
+                // Opublikuj inicjalne wartości
+                float waterLevel = m_levelSensor.measureDistance();
+                updateHomeAssistantSensors(waterLevel);
+                
                 return true;
             } else {
-                Serial.println("BŁĄD");
+                Serial.println("Błąd!");
                 return false;
             }
         }
@@ -480,18 +490,35 @@ public:
     }
 
     void run() {
-        unsigned long currentTime = millis();
+        if (WiFi.status() != WL_CONNECTED) {
+            Serial.println("Reconnecting to WiFi...");
+            WiFi.reconnect();
+            delay(100);
+            return;
+        }
+
+        // Próba ponownego połączenia MQTT jeśli nie jest połączone
+        if (!m_mqtt.isConnected()) {
+            static unsigned long lastMqttRetry = 0;
+            unsigned long now = millis();
+            
+            if (now - lastMqttRetry > MQTT_RETRY_INTERVAL) {
+                Serial.println("Próba ponownego połączenia MQTT...");
+                connectMQTT();
+                lastMqttRetry = now;
+            }
+        }
         
+        m_mqtt.loop(); // Bardzo ważne - obsługa MQTT
+        
+        unsigned long currentTime = millis();
         if (currentTime - m_lastUpdateTime >= UPDATE_INTERVAL) {
             update();
             m_lastUpdateTime = currentTime;
         }
         
-        if (WiFi.status() == WL_CONNECTED) {
-            m_mqtt.loop();
-            ArduinoOTA.handle();
-            m_webServer.handleClient();
-        }
+        ArduinoOTA.handle();
+        m_webServer.handleClient();
     }
 
 private:
@@ -527,13 +554,15 @@ private:
 
 // Główna pętla programu
 void setup() {
-  Serial.begin(115200);
-  HydroSense::HydroSenseApp app;
-  
-  while (true) {
-    app.run();
-    yield();
-  }
+    Serial.begin(115200);
+    while (!Serial) delay(10);  // czekaj na port szeregowy
+    
+    static HydroSense::HydroSenseApp app;
+    
+    while (true) {
+        app.run();
+        yield();
+    }
 }
 
 void loop() {
