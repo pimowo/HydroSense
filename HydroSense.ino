@@ -209,13 +209,11 @@ private:
     static constexpr unsigned long UPDATE_INTERVAL = 1000; // ms
     static constexpr unsigned long MQTT_RETRY_INTERVAL = 5000; // ms
     
-    // Stałe MQTT - użyj wartości z głównego namespace
-    const char* MQTT_BROKER = "192.168.1.14"; // Zaktualizuj na właściwy adres
+    // Stałe MQTT - zmiana na rzeczywiste wartości
+    const char* MQTT_BROKER = "192.168.1.14";
+    const uint16_t MQTT_PORT = 1883;
     const char* MQTT_USER = "hydrosense";
     const char* MQTT_PASSWORD = "hydrosense";
-
-    // Używamy pinów zdefiniowanych w namespace
-    // Nie definiujemy ich ponownie w klasie
 
     // Komponenty sieciowe
     WiFiClient m_wifiClient;
@@ -302,29 +300,10 @@ public:
 
     void initializeHomeAssistant() {
         // Konfiguracja urządzenia
-        // Konwersja daty kompilacji na format DD.MM.RR
-        char buildDate[9];
-        const char* date = __DATE__; // Format: "Mmm DD YYYY"
-        const char* month = date;
-        int day = atoi(date + 4);
-        int year = atoi(date + 7);
-        
-        snprintf(buildDate, sizeof(buildDate), "%02d.%02d.%02d", 
-                day,
-                (month[0] == 'J' && month[1] == 'a' && month[2] == 'n') ? 1 :
-                (month[0] == 'F') ? 2 :
-                (month[0] == 'M' && month[2] == 'r') ? 3 :
-                (month[0] == 'A' && month[1] == 'p') ? 4 :
-                (month[0] == 'M' && month[2] == 'y') ? 5 :
-                (month[0] == 'J' && month[2] == 'n') ? 6 :
-                (month[0] == 'J' && month[2] == 'l') ? 7 :
-                (month[0] == 'A' && month[2] == 'g') ? 8 :
-                (month[0] == 'S') ? 9 :
-                (month[0] == 'O') ? 10 :
-                (month[0] == 'N') ? 11 : 12,
-                year % 100);
-                
-        m_device.setSoftwareVersion(buildDate);
+        m_device.setName("HydroSense");
+        m_device.setSoftwareVersion("09.11.24");
+        m_device.setManufacturer("PMW");
+        m_device.setModel("HS ESP8266");
 
         // Konfiguracja sensorów
         m_haWaterLevelSensor.setName("Water Level");
@@ -339,7 +318,9 @@ public:
         m_reserveSensor.setDeviceClass("problem");
 
         // Połączenie z MQTT
-        connectMQTT();
+        if (connectMQTT()) {
+            publishHAConfig();
+        }
     }
 
     void initializeOTA() {
@@ -409,28 +390,45 @@ public:
 
     void publishHAConfig() {
         if (m_mqtt.isConnected()) {
-            String waterLevelTopic = "homeassistant/sensor/hydrosense/water_level/config";
+            // Publikowanie konfiguracji czujnika poziomu wody
             String config = createSensorConfig("water_level", "Water Level", "mm");
-            m_mqtt.publish(waterLevelTopic.c_str(), config.c_str(), true);
-            
-            String percentTopic = "homeassistant/sensor/hydrosense/water_level_percent/config";
+            String topic = "homeassistant/sensor/hydrosense/water_level/config";
+            m_mqtt.publish(topic.c_str(), config.c_str(), true);
+            Serial.println("Opublikowano konfigurację water_level");
+
+            // Publikowanie konfiguracji czujnika procentowego
             config = createSensorConfig("water_level_percent", "Water Level Percentage", "%");
-            m_mqtt.publish(percentTopic.c_str(), config.c_str(), true);
-            
-            String reserveTopic = "homeassistant/binary_sensor/hydrosense/reserve/config";
-            config = createSensorConfig("reserve", "Water Reserve", "");
-            m_mqtt.publish(reserveTopic.c_str(), config.c_str(), true);
+            topic = "homeassistant/sensor/hydrosense/water_level_percent/config";
+            m_mqtt.publish(topic.c_str(), config.c_str(), true);
+            Serial.println("Opublikowano konfigurację water_level_percent");
+
+            // Publikowanie konfiguracji czujnika rezerwy
+            topic = "homeassistant/binary_sensor/hydrosense/reserve/config";
+            config = "{";
+            config += "\"name\":\"Water Reserve\",";
+            config += "\"device_class\":\"problem\",";
+            config += "\"state_topic\":\"hydrosense/reserve/state\",";
+            config += "\"unique_id\":\"hydrosense_" + m_deviceId + "_reserve\",";
+            config += "\"device\":{";
+            config += "\"identifiers\":[\"hydrosense_" + m_deviceId + "\"],";
+            config += "\"name\":\"HydroSense\",";
+            config += "\"model\":\"HS ESP8266\",";
+            config += "\"manufacturer\":\"PMW\"";
+            config += "}}";
+            m_mqtt.publish(topic.c_str(), config.c_str(), true);
+            Serial.println("Opublikowano konfigurację reserve");
         }
     }
 
     bool connectMQTT() {
         if (!m_mqtt.isConnected()) {
-            if (m_mqtt.begin(MQTT_BROKER, MQTT_USER, MQTT_PASSWORD)) {
-                Serial.println("Połączono z brokerem MQTT");
-                publishHAConfig();
+            Serial.print("Próba połączenia z MQTT...");
+            if (m_mqtt.begin(MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASSWORD)) {
+                Serial.println("OK");
+                publishHAConfig(); // Publikuj konfigurację po połączeniu
                 return true;
             } else {
-                Serial.println("Błąd połączenia z MQTT");
+                Serial.println("BŁĄD");
                 return false;
             }
         }
@@ -439,11 +437,20 @@ public:
 
     void updateHomeAssistantSensors(float waterLevel) {
         if (m_mqtt.isConnected()) {
+            // Aktualizacja poziomu wody
+            String payload = "{\"value\":" + String(waterLevel, 1) + "}";
+            m_mqtt.publish("hydrosense/water_level/state", payload.c_str());
+
+            // Aktualizacja procentowa
             float percentage = calculateWaterPercentage(waterLevel);
-            
-            m_haWaterLevelSensor.setValue(String(waterLevel, 1).c_str());
-            m_haWaterLevelPercentSensor.setValue(String(percentage, 1).c_str());
-            m_reserveSensor.setState(m_settings.checkReserveState(waterLevel));
+            payload = "{\"value\":" + String(percentage, 1) + "}";
+            m_mqtt.publish("hydrosense/water_level_percent/state", payload.c_str());
+
+            // Aktualizacja stanu rezerwy
+            bool isInReserve = m_settings.checkReserveState(waterLevel);
+            m_mqtt.publish("hydrosense/reserve/state", isInReserve ? "ON" : "OFF");
+
+            Serial.println("Zaktualizowano dane w HA");
         }
     }
 
@@ -494,7 +501,6 @@ private:
         
         float currentLevel = m_settings.getEmptyDistance() - waterLevel;
         float percentage = (currentLevel / maxLevel) * 100.0f;
-        
         return constrain(percentage, 0.0f, 100.0f);
     }
     
