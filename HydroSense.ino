@@ -266,7 +266,7 @@ public:
     }
 
     void initializePins() {
-        pinMode(PIN_TRIGGER, OUTPUT);
+        pinMode(PIN_TRIG, OUTPUT);
         pinMode(PIN_ECHO, INPUT);
         pinMode(PIN_BUZZER, OUTPUT);
         digitalWrite(PIN_BUZZER, LOW);
