@@ -324,7 +324,7 @@ public:
         EEPROM.end();
 
         Serial.println("Ustawienia zapisane");
-        printSettings();
+        //printSettings();
     }
 
 void load() {
@@ -363,7 +363,7 @@ void load() {
     EEPROM.end();
 
     Serial.println("Ustawienia załadowane");
-    printSettings();
+    //printSettings();
 }
 
     void printSettings() {
