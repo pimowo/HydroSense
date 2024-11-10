@@ -22,6 +22,8 @@
 
 namespace HydroSense {
 
+    Settings settings;
+
 // Konfiguracja pinów
 constexpr uint8_t PIN_TRIG = D6;
 constexpr uint8_t PIN_ECHO = D7;
@@ -1127,7 +1129,8 @@ const char* WebServer::HTML_FOOT = R"html(
 } // namespace HydroSense
 
 HydroSense::HydroSenseApp* app = nullptr;
-Settings settings;
+
+using namespace HydroSense;
 
 void startWebServer() {
     // Kod inicjalizacji serwera WWW
