@@ -145,117 +145,215 @@ private:
     unsigned long delayDuration;
 };
 
+
 class Settings {
 private:
     static const uint32_t SETTINGS_MAGIC = 0xABCD1234;
-    uint32_t magic;
-    float tankDiameter;     // mm
-    float tankWidth;        // mm
-    float tankHeight;       // mm
-    float fullDistance;     // mm
-    float emptyDistance;    // mm
-    float reserveLevel;     // mm
-    float reserveHysteresis;// mm
-    bool soundEnabled;
-    bool isInReserve;
+    uint32_t m_magic;
+
+    // WiFi settings
+    char m_wifiSSID[32];
+    char m_wifiPassword[64];
+
+    // MQTT settings
+    char m_mqttServer[40];
+    uint16_t m_mqttPort;
+    char m_mqttUser[40];
+    char m_mqttPassword[40];
+
+    // Tank dimensions
+    float m_tankDiameter;     // mm
+    float m_tankWidth;        // mm
+    float m_tankHeight;       // mm
+    float m_fullDistance;     // mm
+    float m_emptyDistance;    // mm
+    float m_reserveLevel;     // mm
+    float m_reserveHysteresis;// mm
+
+    // Pump timing
+    uint32_t m_pumpDelay;    // seconds
+    uint32_t m_pumpWork;     // seconds
+
+    // States
+    bool m_soundEnabled;
+    bool m_reserveState;     // Zmieniliśmy nazwę zmiennej z isInReserve na m_reserveState
 
 public:
     Settings() {
-        // Domyślne wartości dla zbiornika
-        magic = SETTINGS_MAGIC;
-        tankDiameter = 200.0f;     // Średnica zbiornika w mm
-        tankWidth = 0.0f;          // Szerokość zbiornika w mm (0 = okrągły)
-        tankHeight = 300.0f;       // Wysokość zbiornika w mm
-        fullDistance = 50.0f;      // Odległość czujnika od lustra wody przy pełnym zbiorniku
-        emptyDistance = 300.0f;    // Odległość czujnika od dna pustego zbiornika
-        reserveLevel = 250.0f;     // Próg alarmu rezerwy
-        reserveHysteresis = 20.0f; // Histereza dla stanu rezerwy
-        soundEnabled = true;       // Domyślnie włączamy dźwięk
-        isInReserve = false;       // Początkowy stan rezerwy
+        loadDefaults();
     }
 
-    // Gettery
-    float getTankDiameter() const { return tankDiameter; }
-    float getTankWidth() const { return tankWidth; }
-    float getTankHeight() const { return tankHeight; }
-    float getFullDistance() const { return fullDistance; }
-    float getEmptyDistance() const { return emptyDistance; }
-    float getReserveLevel() const { return reserveLevel; }
-    float getReserveThreshold() const { return reserveLevel; } // Alias dla zachowania kompatybilności
-    float getReserveHysteresis() const { return reserveHysteresis; }
-    bool isSoundEnabled() const { return soundEnabled; }
-    bool isInReserve() const { return isInReserve; }
+    void loadDefaults() {
+        m_magic = SETTINGS_MAGIC;
+        
+        // WiFi defaults
+        memset(m_wifiSSID, 0, sizeof(m_wifiSSID));
+        memset(m_wifiPassword, 0, sizeof(m_wifiPassword));
+
+        // MQTT defaults
+        memset(m_mqttServer, 0, sizeof(m_mqttServer));
+        m_mqttPort = 1883;
+        memset(m_mqttUser, 0, sizeof(m_mqttUser));
+        memset(m_mqttPassword, 0, sizeof(m_mqttPassword));
+
+        // Tank defaults
+        m_tankDiameter = 200.0f;
+        m_tankWidth = 0.0f;
+        m_tankHeight = 300.0f;
+        m_fullDistance = 50.0f;
+        m_emptyDistance = 300.0f;
+        m_reserveLevel = 250.0f;
+        m_reserveHysteresis = 20.0f;
+
+        // Pump defaults
+        m_pumpDelay = 300;    // 5 minut
+        m_pumpWork = 60;      // 1 minuta
+
+        // State defaults
+        m_soundEnabled = true;
+        m_reserveState = false;
+
+        save();
+    }
+
+    // WiFi getters and setters
+    const char* getWiFiSSID() const { return m_wifiSSID; }
+    void setWiFiCredentials(const char* ssid, const char* password) {
+        strncpy(m_wifiSSID, ssid, sizeof(m_wifiSSID) - 1);
+        strncpy(m_wifiPassword, password, sizeof(m_wifiPassword) - 1);
+        m_wifiSSID[sizeof(m_wifiSSID) - 1] = '\0';
+        m_wifiPassword[sizeof(m_wifiPassword) - 1] = '\0';
+        save();
+    }
+
+    // MQTT getters and setters
+    const char* getMqttServer() const { return m_mqttServer; }
+    uint16_t getMqttPort() const { return m_mqttPort; }
+    const char* getMqttUser() const { return m_mqttUser; }
+    const char* getMqttPassword() const { return m_mqttPassword; }
     
-    // Settery
-    void setTankDiameter(float value) { tankDiameter = value; save(); }
-    void setTankWidth(float value) { tankWidth = value; save(); }
-    void setTankHeight(float value) { tankHeight = value; save(); }
-    void setFullDistance(float value) { fullDistance = value; save(); }
-    void setEmptyDistance(float value) { emptyDistance = value; save(); }
-    void setReserveLevel(float value) { reserveLevel = value; save(); }
-    void setReserveHysteresis(float value) { reserveHysteresis = value; save(); }
-    void setSoundEnabled(bool value) { soundEnabled = value; save(); }
+    void setMqttConfig(const char* server, uint16_t port, const char* user, const char* password) {
+        strncpy(m_mqttServer, server, sizeof(m_mqttServer) - 1);
+        m_mqttPort = port;
+        strncpy(m_mqttUser, user, sizeof(m_mqttUser) - 1);
+        strncpy(m_mqttPassword, password, sizeof(m_mqttPassword) - 1);
+        m_mqttServer[sizeof(m_mqttServer) - 1] = '\0';
+        m_mqttUser[sizeof(m_mqttUser) - 1] = '\0';
+        m_mqttPassword[sizeof(m_mqttPassword) - 1] = '\0';
+        save();
+    }
+
+    void setReserveLevel(float level) {
+        m_reserveLevel = level;
+        save();
+    }
+
+    // Tank dimension getters and setters
+    float getTankDiameter() const { return m_tankDiameter; }
+    float getTankWidth() const { return m_tankWidth; }
+    float getTankHeight() const { return m_tankHeight; }
+    float getFullDistance() const { return m_fullDistance; }
+    float getEmptyDistance() const { return m_emptyDistance; }
+    float getReserveLevel() const { return m_reserveLevel; }
+    float getReserveHysteresis() const { return m_reserveHysteresis; }
+
+    void setTankDimensions(float diameter, float width, float height, float fullDist, float emptyDist, float reserveLevel) {
+        m_tankDiameter = diameter;
+        m_tankWidth = width;
+        m_tankHeight = height;
+        m_fullDistance = fullDist;
+        m_emptyDistance = emptyDist;
+        m_reserveLevel = reserveLevel;
+        save();
+    }
+
+    // Pump timing getters and setters
+    uint32_t getPumpDelay() const { return m_pumpDelay; }
+    uint32_t getPumpWork() const { return m_pumpWork; }
+    
+    void setPumpTiming(uint32_t delay, uint32_t work) {
+        m_pumpDelay = delay;
+        m_pumpWork = work;
+        save();
+    }
+
+    // State getters and setters
+    bool isSoundEnabled() const { return m_soundEnabled; }
+    void setSoundEnabled(bool enabled) {
+        m_soundEnabled = enabled;
+        save();
+    }
+
+    bool isInReserve() const { return m_reserveState; }
+
+    bool checkReserveState(float currentDistance) {
+        if (!m_reserveState && currentDistance >= m_reserveLevel) {
+            m_reserveState = true;
+        } else if (m_reserveState && currentDistance <= (m_reserveLevel - m_reserveHysteresis)) {
+            m_reserveState = false;
+        }
+        return m_reserveState;
+    }
 
     void save() {
         EEPROM.begin(512);
-        magic = SETTINGS_MAGIC;
-        EEPROM.put(0, magic);
-        EEPROM.put(4, tankDiameter);
-        EEPROM.put(8, tankWidth);
-        EEPROM.put(12, tankHeight);
-        EEPROM.put(16, fullDistance);
-        EEPROM.put(20, emptyDistance);
-        EEPROM.put(24, reserveLevel);
-        EEPROM.put(28, reserveHysteresis);
-        EEPROM.put(32, soundEnabled);
+        uint16_t addr = 0;
+        
+        EEPROM.put(addr, m_magic); addr += sizeof(m_magic);
+        EEPROM.put(addr, m_wifiSSID); addr += sizeof(m_wifiSSID);
+        EEPROM.put(addr, m_wifiPassword); addr += sizeof(m_wifiPassword);
+        EEPROM.put(addr, m_mqttServer); addr += sizeof(m_mqttServer);
+        EEPROM.put(addr, m_mqttPort); addr += sizeof(m_mqttPort);
+        EEPROM.put(addr, m_mqttUser); addr += sizeof(m_mqttUser);
+        EEPROM.put(addr, m_mqttPassword); addr += sizeof(m_mqttPassword);
+        EEPROM.put(addr, m_tankDiameter); addr += sizeof(m_tankDiameter);
+        EEPROM.put(addr, m_tankWidth); addr += sizeof(m_tankWidth);
+        EEPROM.put(addr, m_tankHeight); addr += sizeof(m_tankHeight);
+        EEPROM.put(addr, m_fullDistance); addr += sizeof(m_fullDistance);
+        EEPROM.put(addr, m_emptyDistance); addr += sizeof(m_emptyDistance);
+        EEPROM.put(addr, m_reserveLevel); addr += sizeof(m_reserveLevel);
+        EEPROM.put(addr, m_reserveHysteresis); addr += sizeof(m_reserveHysteresis);
+        EEPROM.put(addr, m_pumpDelay); addr += sizeof(m_pumpDelay);
+        EEPROM.put(addr, m_pumpWork); addr += sizeof(m_pumpWork);
+        EEPROM.put(addr, m_soundEnabled); addr += sizeof(m_soundEnabled);
+        EEPROM.put(addr, m_reserveState); addr += sizeof(m_reserveState);
+        
         EEPROM.commit();
         EEPROM.end();
     }
 
     void load() {
         EEPROM.begin(512);
-        uint32_t magic;
-        EEPROM.get(0, magic);
+        uint16_t addr = 0;
         
-        if (magic != SETTINGS_MAGIC) {
-            Serial.println("Wykryto niezainicjalizowany EEPROM - resetowanie do wartości domyślnych");
-            reset();
+        EEPROM.get(addr, m_magic); addr += sizeof(m_magic);
+        
+        if (m_magic != SETTINGS_MAGIC) {
+            Serial.println("Wykryto niezainicjalizowany EEPROM - ładowanie wartości domyślnych");
+            EEPROM.end();
+            loadDefaults();
             return;
         }
+
+        EEPROM.get(addr, m_wifiSSID); addr += sizeof(m_wifiSSID);
+        EEPROM.get(addr, m_wifiPassword); addr += sizeof(m_wifiPassword);
+        EEPROM.get(addr, m_mqttServer); addr += sizeof(m_mqttServer);
+        EEPROM.get(addr, m_mqttPort); addr += sizeof(m_mqttPort);
+        EEPROM.get(addr, m_mqttUser); addr += sizeof(m_mqttUser);
+        EEPROM.get(addr, m_mqttPassword); addr += sizeof(m_mqttPassword);
+        EEPROM.get(addr, m_tankDiameter); addr += sizeof(m_tankDiameter);
+        EEPROM.get(addr, m_tankWidth); addr += sizeof(m_tankWidth);
+        EEPROM.get(addr, m_tankHeight); addr += sizeof(m_tankHeight);
+        EEPROM.get(addr, m_fullDistance); addr += sizeof(m_fullDistance);
+        EEPROM.get(addr, m_emptyDistance); addr += sizeof(m_emptyDistance);
+        EEPROM.get(addr, m_reserveLevel); addr += sizeof(m_reserveLevel);
+        EEPROM.get(addr, m_reserveHysteresis); addr += sizeof(m_reserveHysteresis);
+        EEPROM.get(addr, m_pumpDelay); addr += sizeof(m_pumpDelay);
+        EEPROM.get(addr, m_pumpWork); addr += sizeof(m_pumpWork);
+        EEPROM.get(addr, m_soundEnabled); addr += sizeof(m_soundEnabled);
+        EEPROM.get(addr, m_reserveState); addr += sizeof(m_reserveState);
         
-        EEPROM.get(4, tankDiameter);
-        EEPROM.get(8, tankWidth);
-        EEPROM.get(12, tankHeight);
-        EEPROM.get(16, fullDistance);
-        EEPROM.get(20, emptyDistance);
-        EEPROM.get(24, reserveLevel);
-        EEPROM.get(28, reserveHysteresis);
-        EEPROM.get(32, soundEnabled);
         EEPROM.end();
-    }
-
-    void reset() {
-        // Przywracanie wartości domyślnych
-        magic = SETTINGS_MAGIC;
-        tankDiameter = 200.0f;
-        tankWidth = 0.0f;
-        tankHeight = 300.0f;
-        fullDistance = 50.0f;
-        emptyDistance = 300.0f;
-        reserveLevel = 250.0f;
-        reserveHysteresis = 20.0f;
-        soundEnabled = true;
-        isInReserve = false;
-        save();
-    }
-
-    bool checkReserveState(float currentDistance) {
-        if (!isInReserve && currentDistance >= reserveLevel) {
-            isInReserve = true;
-        } else if (isInReserve && currentDistance <= (reserveLevel - reserveHysteresis)) {
-            isInReserve = false;
-        }
-        return isInReserve;
     }
 };
 
@@ -422,7 +520,7 @@ public:
         delay(100); // Daj czas na reset WiFiManager
         
         // Reset własnych ustawień
-        settings.reset();
+        settings.loadDefaults();
         delay(100); // Daj czas na reset ustawień
         
         // Sygnał zakończenia resetu
@@ -738,7 +836,7 @@ void initializeWiFi() {
         Serial.printf("- Średnica zbiornika: %.1f mm\n", settings.getTankDiameter());
         Serial.printf("- Wysokość pełna: %.1f mm\n", settings.getFullDistance());
         Serial.printf("- Wysokość pusta: %.1f mm\n", settings.getEmptyDistance());
-        Serial.printf("- Próg rezerwy: %.1f mm\n", settings.getReserveThreshold());
+        Serial.printf("- Próg rezerwy: %.1f mm\n", settings.getReserveLevel());
         Serial.printf("- Dźwięk włączony: %s\n", settings.isSoundEnabled() ? "Tak" : "Nie");
     }
 
@@ -759,7 +857,7 @@ void initializeWiFi() {
 
     void checkAlarmsAndNotifications() {
         float waterLevel = levelSensor.measureDistance();
-        bool shouldAlarm = waterLevel >= settings.getReserveThreshold() && settings.isSoundEnabled();
+        bool shouldAlarm = waterLevel >= settings.getReserveLevel() && settings.isSoundEnabled();
         
         digitalWrite(PIN_BUZZER, shouldAlarm ? HIGH : LOW);
         
@@ -870,18 +968,21 @@ private:
             server.hasArg("mqtt_user") && server.hasArg("mqtt_pass")) {
             settings.setMqttConfig(
                 server.arg("mqtt_server").c_str(),
+                (uint16_t)server.arg("mqtt_port").toInt(),  // Dodanie jawnej konwersji na uint16_t
                 server.arg("mqtt_user").c_str(),
-                server.arg("mqtt_pass").c_str(),
-                server.arg("mqtt_port").toInt()
+                server.arg("mqtt_password").c_str()
             );
         }
         
         // Tank settings
         if (server.hasArg("tank_width") && server.hasArg("tank_height") && server.hasArg("tank_diameter")) {
             settings.setTankDimensions(
+                server.arg("tank_diameter").toFloat(),
                 server.arg("tank_width").toFloat(),
                 server.arg("tank_height").toFloat(),
-                server.arg("tank_diameter").toFloat()
+                server.arg("full_distance").toFloat(),
+                server.arg("empty_distance").toFloat(),
+                server.arg("reserve_level").toFloat()
             );
         }
         
