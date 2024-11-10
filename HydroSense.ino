@@ -325,48 +325,46 @@ public:
 
         Serial.println("Ustawienia zapisane");
         printSettings();
-
     }
 
-    void load() {
-        EEPROM.begin(512);
-        uint16_t addr = 0;
+void load() {
+    EEPROM.begin(512);
+    uint16_t addr = 0;
 
-        Serial.println("Ładowanie ustawień z EEPROM");
+    Serial.println("Ładowanie ustawień z EEPROM");
 
-        EEPROM.get(addr, m_magic); addr += sizeof(m_magic);
+    EEPROM.get(addr, m_magic); addr += sizeof(m_magic);
 
-        if (m_magic != SETTINGS_MAGIC) {
-            Serial.println("Wykryto niezainicjalizowany EEPROM - ładowanie wartości domyślnych");
-            EEPROM.end();
-            loadDefaults();
-            return;
-        }
-
-        EEPROM.get(addr, m_wifiSSID); addr += sizeof(m_wifiSSID);
-        EEPROM.get(addr, m_wifiPassword); addr += sizeof(m_wifiPassword);
-        EEPROM.get(addr, m_mqttServer); addr += sizeof(m_mqttServer);
-        EEPROM.get(addr, m_mqttPort); addr += sizeof(m_mqttPort);
-        EEPROM.get(addr, m_mqttUser); addr += sizeof(m_mqttUser);
-        EEPROM.get(addr, m_mqttPassword); addr += sizeof(m_mqttPassword);
-        EEPROM.get(addr, m_tankDiameter); addr += sizeof(m_tankDiameter);
-        EEPROM.get(addr, m_tankWidth); addr += sizeof(m_tankWidth);
-        EEPROM.get(addr, m_tankHeight); addr += sizeof(m_tankHeight);
-        EEPROM.get(addr, m_fullDistance); addr += sizeof(m_fullDistance);
-        EEPROM.get(addr, m_emptyDistance); addr += sizeof(m_emptyDistance);
-        EEPROM.get(addr, m_reserveLevel); addr += sizeof(m_reserveLevel);
-        EEPROM.get(addr, m_reserveHysteresis); addr += sizeof(m_reserveHysteresis);
-        EEPROM.get(addr, m_pumpDelay); addr += sizeof(m_pumpDelay);
-        EEPROM.get(addr, m_pumpWork); addr += sizeof(m_pumpWork);
-        EEPROM.get(addr, m_soundEnabled); addr += sizeof(m_soundEnabled);
-        EEPROM.get(addr, m_reserveState); addr += sizeof(m_reserveState);
-
+    if (m_magic != SETTINGS_MAGIC) {
+        Serial.println("Wykryto niezainicjalizowany EEPROM - ładowanie wartości domyślnych");
         EEPROM.end();
-
-        Serial.println("Ustawienia załadowane");
-        printSettings();
-
+        loadDefaults();
+        return;
     }
+
+    EEPROM.get(addr, m_wifiSSID); addr += sizeof(m_wifiSSID);
+    EEPROM.get(addr, m_wifiPassword); addr += sizeof(m_wifiPassword);
+    EEPROM.get(addr, m_mqttServer); addr += sizeof(m_mqttServer);
+    EEPROM.get(addr, m_mqttPort); addr += sizeof(m_mqttPort);
+    EEPROM.get(addr, m_mqttUser); addr += sizeof(m_mqttUser);
+    EEPROM.get(addr, m_mqttPassword); addr += sizeof(m_mqttPassword);
+    EEPROM.get(addr, m_tankDiameter); addr += sizeof(m_tankDiameter);
+    EEPROM.get(addr, m_tankWidth); addr += sizeof(m_tankWidth);
+    EEPROM.get(addr, m_tankHeight); addr += sizeof(m_tankHeight);
+    EEPROM.get(addr, m_fullDistance); addr += sizeof(m_fullDistance);
+    EEPROM.get(addr, m_emptyDistance); addr += sizeof(m_emptyDistance);
+    EEPROM.get(addr, m_reserveLevel); addr += sizeof(m_reserveLevel);
+    EEPROM.get(addr, m_reserveHysteresis); addr += sizeof(m_reserveHysteresis);
+    EEPROM.get(addr, m_pumpDelay); addr += sizeof(m_pumpDelay);
+    EEPROM.get(addr, m_pumpWork); addr += sizeof(m_pumpWork);
+    EEPROM.get(addr, m_soundEnabled); addr += sizeof(m_soundEnabled);
+    EEPROM.get(addr, m_reserveState); addr += sizeof(m_reserveState);
+
+    EEPROM.end();
+
+    Serial.println("Ustawienia załadowane");
+    printSettings();
+}
 
     void printSettings() {
         Serial.printf("m_wifiSSID: %s\n", m_wifiSSID);
@@ -1009,6 +1007,8 @@ private:
     }
     
     void handleConfigGet() {
+        settings.load();  // Load settings from EEPROM
+        
         String html = HTML_HEAD;
         html += "<h2>Konfiguracja HydroSense</h2>";
         html += "<form method='post'>";
