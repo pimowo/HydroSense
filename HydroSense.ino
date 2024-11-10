@@ -22,8 +22,6 @@
 
 namespace HydroSense {
 
-    Settings settings;
-
 // Konfiguracja pinów
 constexpr uint8_t PIN_TRIG = D6;
 constexpr uint8_t PIN_ECHO = D7;
@@ -994,6 +992,10 @@ public:
         server.begin();
     }
     
+    void begin() {
+        // implementacja metody begin
+    }
+
     void handle() {
         server.handleClient();
     }
@@ -1133,16 +1135,15 @@ HydroSense::HydroSenseApp* app = nullptr;
 using namespace HydroSense;
 
 void startWebServer() {
-    // Kod inicjalizacji serwera WWW
+    static WebServer webServer(settings);
+    webServer.begin();
     Serial.println("Serwer WWW uruchomiony");
 }
 
 void setup() {
     Serial.begin(115200);
+    Serial.println("");
     Serial.println("=== HydroSense - Inicjalizacja ===");
-    
-    // Inicjalizacja ustawień
-    settings.load();
     
     // Inicjalizacja serwera WWW
     Serial.println("Inicjalizacja serwera WWW");
@@ -1154,5 +1155,6 @@ void loop() {
     if (app) {
         app->run();
     }
+    webServer.handle();
     yield();
 }
