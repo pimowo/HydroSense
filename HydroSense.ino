@@ -401,42 +401,34 @@ public:
         }
 
         if (!m_mqtt.isConnected()) {
-            Serial.printf("\nPróba połączenia z MQTT:\n");
+            Serial.printf("\nPróba połączenia z MQTT (WiFi Status: %d):\n", WiFi.status());
             Serial.printf("Broker: %s\n", mqtt_broker);
             Serial.printf("Port: %d\n", mqtt_port);
             Serial.printf("User: %s\n", mqtt_user);
             Serial.printf("Password: %s\n", mqtt_password);
+            Serial.printf("Client ID: %s\n", m_deviceId.c_str());
             
+            // Rozłącz jeśli było poprzednie połączenie
             m_mqtt.disconnect();
-            delay(1000); // Zwiększamy opóźnienie przed ponownym połączeniem
+            delay(1000);
             
-            // Dodajemy więcej parametrów połączenia
-            HADevice device(m_deviceId.c_str());
-            device.setName("HydroSense");
-            device.setSoftwareVersion("2.0");
-            device.setManufacturer("PMW");
-            device.setModel("HS ESP8266");
+            // Próba połączenia z większą ilością debugowania
+            bool beginResult = m_mqtt.begin(mqtt_broker, mqtt_port, mqtt_user, mqtt_password);
+            Serial.printf("Begin result: %s\n", beginResult ? "TRUE" : "FALSE");
             
-            if (m_mqtt.begin(mqtt_broker, mqtt_port, mqtt_user, mqtt_password)) {
-                Serial.println("Połączenie MQTT zainicjowane");
-                delay(2000); // Dajemy więcej czasu na stabilizację połączenia
+            if (beginResult) {
+                delay(2000); // Czekamy na ustabilizowanie połączenia
                 
                 if (m_mqtt.isConnected()) {
-                    Serial.println("MQTT Connected - próba publikacji konfiguracji");
-                    if (publishHAConfig()) {
-                        Serial.println("Konfiguracja HA opublikowana pomyślnie");
-                        return true;
-                    } else {
-                        Serial.println("Błąd publikacji konfiguracji HA");
-                    }
+                    Serial.println("MQTT Connected successfully!");
+                    return true;
                 } else {
-                    Serial.println("MQTT nie jest połączone po begin()");
+                    Serial.println("MQTT begin() success but connection failed");
                 }
             } else {
-                Serial.println("Błąd inicjalizacji MQTT");
+                Serial.println("MQTT begin() failed");
             }
             
-            Serial.println("Połączenie MQTT nie powiodło się");
             return false;
         }
         return true;
@@ -589,6 +581,7 @@ void initializeWiFi() {
         m_reserveSensor.setName("Water Reserve");
         m_reserveSensor.setDeviceClass("problem");
         
+        delay(5000); // Daj WiFi czas na pełną stabilizację
         connectMQTT();
     }
 
