@@ -1146,15 +1146,24 @@ void setup() {
     // Inicjalizacja serwera WWW
     Serial.println("Inicjalizacja serwera WWW");
     startWebServer();
+    Serial.println("Serwer WWW uruchomiony");
+
+    // Inicjalizacja aplikacji HydroSense
+    app = new HydroSense::HydroSenseApp();
+    Serial.println("App została zainicjalizowana");
 }
 
 void loop() {
     ESP.wdtFeed();
     if (app) {
         app->run();
+    } else {
+        Serial.println("App nie jest zainicjalizowana");
     }
     if (webServer) {
         webServer->handle();
+    } else {
+        Serial.println("Serwer WWW nie jest zainicjalizowany");
     }
     yield();
 }
