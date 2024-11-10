@@ -744,7 +744,6 @@ void initializeWiFi() {
         webServer.on("/", [this]() {
             handleRoot();
         });
-        
         webServer.begin();
         Serial.println("Serwer WWW uruchomiony");
     }
