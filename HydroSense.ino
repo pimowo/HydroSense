@@ -1062,9 +1062,9 @@ private:
             server.hasArg("mqtt_user") && server.hasArg("mqtt_pass")) {
             settings.setMqttConfig(
                 server.arg("mqtt_server").c_str(),
-                (uint16_t)server.arg("mqtt_port").toInt(),  // Dodanie jawnej konwersji na uint16_t
+                (uint16_t)server.arg("mqtt_port").toInt(),
                 server.arg("mqtt_user").c_str(),
-                server.arg("mqtt_password").c_str()
+                server.arg("mqtt_pass").c_str() // zmiana z mqtt_password na mqtt_pass
             );
         }
         
