@@ -401,22 +401,20 @@ public:
         return true;
     }
 
-    void resetSettings() {
-        // Sygnał dźwiękowy - start resetowania
-        tone(PIN_BUZZER, 2000, 200);
-        delay(300);
-        
-        // Kasowanie ustawień
+    void resetAll() {
+        // Reset WiFiManager
         wm.resetSettings();
+        
+        // Reset własnych ustawień
         m_settings.reset();
         
-        // Sygnał dźwiękowy - koniec resetowania
-        tone(PIN_BUZZER, 1000, 200);
-        delay(300);
-        tone(PIN_BUZZER, 2000, 200);
+        // Czyszczenie EEPROM
+        for (int i = 0; i < 512; i++) {
+            EEPROM.write(i, 0);
+        }
+        EEPROM.commit();
         
         delay(1000);
-        Serial.println("Ustawienia skasowane - restart...");
         ESP.restart();
     }
 
@@ -425,16 +423,37 @@ public:
         pinMode(PIN_ECHO, INPUT);
         pinMode(PIN_BUTTON, INPUT_PULLUP);
         pinMode(PIN_BUZZER, OUTPUT);
+        digitalWrite(PIN_BUZZER, LOW);
         
-        // Sprawdzenie przycisku podczas startu
+        // Sprawdzanie przycisku podczas startu
         int buttonHoldTime = 0;
         while (digitalRead(PIN_BUTTON) == LOW) { // Przycisk wciśnięty
             delay(100);
             buttonHoldTime += 100;
             
-            // Po 3 sekundach trzymania
-            if (buttonHoldTime == 3000) {
-                resetSettings();
+            // Po 1 sekundzie - pierwszy sygnał
+            if (buttonHoldTime == 1000) {
+                tone(PIN_BUZZER, 2000, 200);
+            }
+            
+            // Po 3 sekundach - resetowanie
+            if (buttonHoldTime >= 3000) {
+                // Sygnał potwierdzający reset
+                tone(PIN_BUZZER, 1000, 200);
+                delay(300);
+                tone(PIN_BUZZER, 2000, 200);
+                
+                Serial.println("Reset ustawień...");
+                
+                // Reset WiFiManager
+                wm.resetSettings();
+                
+                // Reset własnych ustawień
+                m_settings.reset();
+                
+                delay(1000);
+                Serial.println("Restart urządzenia...");
+                ESP.restart();
             }
         }
     }
