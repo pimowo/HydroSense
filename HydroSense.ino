@@ -1123,19 +1123,17 @@ const char* WebServer::HTML_HEAD = R"html(
 <body>
 )html";
 
-const char* WebServer::HTML_FOOT = R"html(
-</body>
-</html>
-)html";
+const char* WebServer::HTML_FOOT = R"html(</body></html>)html";
 
 } // namespace HydroSense
 
 // Deklaracja zmiennych globalnych
 HydroSense::HydroSenseApp* app = nullptr;
 HydroSense::WebServer* webServer = nullptr;
+HydroSense::Settings settings; // Deklaracja globalna
 
 void startWebServer() {
-    static HydroSense::WebServer webServerInstance;
+    static HydroSense::WebServer webServerInstance(settings); // Przekaż argument 'settings'
     webServer = &webServerInstance;
     webServer->begin();
     Serial.println("Serwer WWW uruchomiony");
