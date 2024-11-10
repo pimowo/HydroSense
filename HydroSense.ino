@@ -12,6 +12,7 @@
 #include <ESP8266WebServer.h>
 #include <CRC32.h>
 #include <ArduinoHA.h>
+#include <WiFiManager.h>
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -234,16 +235,11 @@ public:
 // Główna klasa aplikacji
 class HydroSenseApp {
 private:
-    // Stałe
-    static constexpr unsigned long UPDATE_INTERVAL = 1000; // ms
-    static constexpr unsigned long MQTT_RETRY_INTERVAL = 5000; // ms
-    static constexpr unsigned long WIFI_CHECK_INTERVAL = 30000; // ms
-    
-    // Stałe MQTT
-    const char* MQTT_BROKER = "192.168.1.14";
-    const uint16_t MQTT_PORT = 1883;
-    const char* MQTT_USER = "hydrosense";
-    const char* MQTT_PASSWORD = "hydrosense";
+    WiFiManager wm; // Dodajemy obiekt WiFiManager
+    WiFiManagerParameter mqtt_server;
+    WiFiManagerParameter mqtt_port;
+    WiFiManagerParameter mqtt_user;
+    WiFiManagerParameter mqtt_pass;
 
     // Komponenty sieciowe
     WiFiClient m_wifiClient;
@@ -299,6 +295,13 @@ public:
         pinMode(PIN_ECHO, INPUT);
         pinMode(PIN_BUZZER, OUTPUT);
         digitalWrite(PIN_BUZZER, LOW);
+
+        // Sprawdź czy przycisk jest wciśnięty przy starcie
+        if(digitalRead(PIN_BUTTON) == LOW) {
+            Serial.println("Przycisk wciśnięty - reset ustawień WiFi");
+            wm.resetSettings();
+            ESP.restart();
+        }
     }
 
     void welcomeBuzzer() {
@@ -309,57 +312,46 @@ public:
         digitalWrite(PIN_BUZZER, LOW);
     }
 
-    void initializeWiFi() {
-        Serial.println("\nKonfiguracja WiFi...");
-        
-        // Całkowite czyszczenie konfiguracji WiFi
-        WiFi.persistent(false);
-        WiFi.disconnect(true);
-        WiFi.mode(WIFI_OFF);
-        ESP.eraseConfig();
-        delay(1000); // Dłuższy delay po czyszczeniu
-        
-        WiFi.mode(WIFI_STA);
-        WiFi.setAutoReconnect(true);
-        WiFi.persistent(true);
-        
-        Serial.printf("Łączenie z %s \n", WIFI_SSID);
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-        
-        int attempts = 0;
-        while (WiFi.status() != WL_CONNECTED && attempts < 30) { // Zwiększamy timeout
-            delay(1000); // Dłuższy delay między próbami
-            Serial.print(".");
-            attempts++;
-            
-            if (attempts % 5 == 0) {
-                Serial.printf("\nPróba %d/30: Status: %d, RSSI: %d dBm\n", 
-                    attempts, WiFi.status(), WiFi.RSSI());
-                
-                // Restart połączenia co 5 prób
-                if (WiFi.status() == WL_CONNECT_FAILED) {
-                    Serial.println("Restart połączenia...");
-                    WiFi.disconnect();
-                    delay(500);
-                    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-                }
-            }
-            ESP.wdtFeed();
-        }
-        
-        if (WiFi.status() == WL_CONNECTED) {
-            Serial.printf("\nPołączono! IP: %s\nRSSI: %d dBm\n", 
-                WiFi.localIP().toString().c_str(), WiFi.RSSI());
-        } else {
-            Serial.printf("\nBłąd połączenia. Status: %d\n", WiFi.status());
-            
-            // Spróbuj hard reset WiFi
-            Serial.println("Wykonuję hard reset WiFi...");
-            ESP.eraseConfig();
-            delay(1000);
-            ESP.restart();
-        }
+void initializeWiFi() {
+    // Parametry dla MQTT
+    WiFiManagerParameter mqtt_server("mqtt_server", "MQTT Server", MQTT_BROKER, 40);
+    WiFiManagerParameter mqtt_port("mqtt_port", "MQTT Port", "1883", 6);
+    WiFiManagerParameter mqtt_user("mqtt_user", "MQTT User", MQTT_USER, 40);
+    WiFiManagerParameter mqtt_pass("mqtt_pass", "MQTT Password", MQTT_PASSWORD, 40);
+    
+    // Dodaj parametry do WiFiManager
+    wm.addParameter(&mqtt_server);
+    wm.addParameter(&mqtt_port);
+    wm.addParameter(&mqtt_user);
+    wm.addParameter(&mqtt_pass);
+    
+    // Skonfiguruj zachowanie WiFiManager
+    wm.setConfigPortalTimeout(180); // 3 minuty timeout
+    wm.setConnectTimeout(30); // 30 sekund na połączenie
+    wm.setDebugOutput(true);
+    
+    // Własny nagłówek portalu
+    wm.setTitle("HydroSense Setup");
+    
+    // Próba automatycznego połączenia
+    if(!wm.autoConnect("HydroSense-Setup")) {
+        Serial.println("Błąd połączenia! Reset...");
+        ESP.restart();
     }
+    
+    // Jeśli połączono, zapisz parametry MQTT
+    if(WiFi.status() == WL_CONNECTED) {
+        Serial.println("Połączono z WiFi!");
+        
+        // Zapisz parametry MQTT
+        strcpy(MQTT_BROKER, mqtt_server.getValue());
+        MQTT_PORT = atoi(mqtt_port.getValue());
+        strcpy(MQTT_USER, mqtt_user.getValue());
+        strcpy(MQTT_PASSWORD, mqtt_pass.getValue());
+        
+        Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
+    }
+}
 
     void initializeHomeAssistant() {
         m_haWaterLevelSensor.setName("Water Level");
