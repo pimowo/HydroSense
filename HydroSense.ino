@@ -148,144 +148,145 @@ private:
 class Settings {
 private:
     static const uint32_t SETTINGS_MAGIC = 0xABCD1234;
-    uint32_t m_magic;
-    float m_tankDiameter;     // mm
-    float m_fullDistance;     // mm
-    float m_emptyDistance;    // mm
-    float m_reserveThreshold; // mm
-    float m_reserveHysteresis;// mm
-    bool m_soundEnabled;
-    bool m_isInReserve;
+    
+    // Struktura przechowująca wszystkie ustawienia
+    struct Data {
+        uint32_t magic;
+        // WiFi & MQTT
+        char wifi_ssid[33];
+        char wifi_password[65];
+        char mqtt_server[40];
+        char mqtt_user[40];
+        char mqtt_password[40];
+        uint16_t mqtt_port;
+        
+        // Ustawienia zbiornika
+        float tank_width;     // mm
+        float tank_height;    // mm
+        float tank_diameter;  // mm
+        float reserve_level;  // mm
+        
+        // Ustawienia pompy
+        uint32_t pump_delay;  // s
+        uint32_t pump_work;   // s
+        
+        // Inne ustawienia
+        bool sound_enabled;
+    } data;
 
 public:
-    // Konstruktor
     Settings() {
-        // Domyślne wartości dla zbiornika
-        m_magic = SETTINGS_MAGIC;
-        m_tankDiameter = 315.0f;     // Średnica zbiornika w mm
-        m_fullDistance = 50.0f;      // Odległość czujnika od lustra wody przy pełnym zbiorniku
-        m_emptyDistance = 300.0f;    // Odległość czujnika od dna pustego zbiornika
-        m_reserveThreshold = 250.0f; // Próg alarmu rezerwy
-        m_reserveHysteresis = 20.0f; // Histereza dla stanu rezerwy
-        m_soundEnabled = true;       // Domyślnie włączamy dźwięk
-        m_isInReserve = false;       // Początkowy stan rezerwy
-        
-        // Zapisujemy wartości domyślne do EEPROM
-        save();
-        
-        // Weryfikacja zapisu
-        load();
-        
-        // Log wartości po inicjalizacji
-        Serial.println("Zainicjalizowano domyślne wartości:");
-        Serial.printf("- Średnica zbiornika: %.1f mm\n", m_tankDiameter);
-        Serial.printf("- Wysokość pełna: %.1f mm\n", m_fullDistance);
-        Serial.printf("- Wysokość pusta: %.1f mm\n", m_emptyDistance);
-        Serial.printf("- Próg rezerwy: %.1f mm\n", m_reserveThreshold);
-        Serial.printf("- Histereza rezerwy: %.1f mm\n", m_reserveHysteresis);
-        Serial.printf("- Dźwięk włączony: %s\n", m_soundEnabled ? "Tak" : "Nie");
+        loadDefaults();
     }
-
-    // Gettery
-    float getTankDiameter() const { return m_tankDiameter; }
-    float getFullDistance() const { return m_fullDistance; }
-    float getEmptyDistance() const { return m_emptyDistance; }
-    float getReserveThreshold() const { return m_reserveThreshold; }
-    float getReserveHysteresis() const { return m_reserveHysteresis; }
-    bool isSoundEnabled() const { return m_soundEnabled; }
-    bool isInReserve() const { return m_isInReserve; }
     
-    // Settery
-    void setTankDiameter(float value) { m_tankDiameter = value; save(); }
-    void setFullDistance(float value) { m_fullDistance = value; save(); }
-    void setEmptyDistance(float value) { m_emptyDistance = value; save(); }
-    void setReserveThreshold(float value) { m_reserveThreshold = value; save(); }
-    void setReserveHysteresis(float value) { m_reserveHysteresis = value; save(); }
-    void setSoundEnabled(bool value) { m_soundEnabled = value; save(); }
-
-    void save() {
-        EEPROM.begin(512);
-        m_magic = SETTINGS_MAGIC;
-        EEPROM.put(0, m_magic);
-        EEPROM.put(4, m_tankDiameter);
-        EEPROM.put(8, m_fullDistance);
-        EEPROM.put(12, m_emptyDistance);
-        EEPROM.put(16, m_reserveThreshold);
-        EEPROM.put(20, m_reserveHysteresis);
-        EEPROM.put(24, m_soundEnabled);
-        EEPROM.commit();
-        EEPROM.end();
+    void loadDefaults() {
+        data.magic = SETTINGS_MAGIC;
+        
+        // Domyślne WiFi & MQTT
+        strcpy(data.wifi_ssid, "");
+        strcpy(data.wifi_password, "");
+        strcpy(data.mqtt_server, "192.168.1.14");
+        strcpy(data.mqtt_user, "hydrosense");
+        strcpy(data.mqtt_password, "hydrosense");
+        data.mqtt_port = 1883;
+        
+        // Domyślne wymiary zbiornika
+        data.tank_width = 300.0f;    // mm
+        data.tank_height = 400.0f;   // mm
+        data.tank_diameter = 315.0f;  // mm
+        data.reserve_level = 50.0f;   // mm
+        
+        // Domyślne czasy pompy
+        data.pump_delay = 5;  // 5 sekund
+        data.pump_work = 30;  // 30 sekund
+        
+        // Inne
+        data.sound_enabled = true;
+        
+        save();
     }
-
-    void load() {
+    
+    bool load() {
         EEPROM.begin(512);
         uint32_t magic;
         EEPROM.get(0, magic);
         
         if (magic != SETTINGS_MAGIC) {
-            Serial.println("Wykryto niezainicjalizowany EEPROM - resetowanie do wartości domyślnych");
-            reset();
-            return;
+            Serial.println("Niezainicjalizowany EEPROM - ładuję wartości domyślne");
+            EEPROM.end();
+            loadDefaults();
+            return false;
         }
         
-        EEPROM.get(4, m_tankDiameter);
-        EEPROM.get(8, m_fullDistance);
-        EEPROM.get(12, m_emptyDistance);
-        EEPROM.get(16, m_reserveThreshold);
-        EEPROM.get(20, m_reserveHysteresis);
-        EEPROM.get(24, m_soundEnabled);
+        EEPROM.get(0, data);
         EEPROM.end();
+        return true;
     }
-
-    void reset() {
+    
+    void save() {
         EEPROM.begin(512);
-        
-        // Przywróć wartości domyślne
-        m_magic = SETTINGS_MAGIC;
-        m_tankDiameter = 315.0f;
-        m_fullDistance = 50.0f;
-        m_emptyDistance = 300.0f;
-        m_reserveThreshold = 250.0f;
-        m_reserveHysteresis = 20.0f;
-        m_soundEnabled = true;
-        m_isInReserve = false;
-        
-        // Wyczyść cały EEPROM
-        for (int i = 0; i < 512; i++) {
-            EEPROM.write(i, 0);
-        }
-        
-        // Zapisz wartości domyślne
-        EEPROM.put(0, m_magic);
-        EEPROM.put(4, m_tankDiameter);
-        EEPROM.put(8, m_fullDistance);
-        EEPROM.put(12, m_emptyDistance);
-        EEPROM.put(16, m_reserveThreshold);
-        EEPROM.put(20, m_reserveHysteresis);
-        EEPROM.put(24, m_soundEnabled);
-        
-        if (EEPROM.commit()) {
-            Serial.println("Reset ustawień - zapisano domyślne wartości");
-            tone(PIN_BUZZER, 2000, 200); // Potwierdzenie dźwiękowe
-        } else {
-            Serial.println("Błąd zapisu EEPROM!");
-            // Sygnał błędu
-            tone(PIN_BUZZER, 500, 100);
-            delay(100);
-            tone(PIN_BUZZER, 500, 100);
-        }
-        
+        data.magic = SETTINGS_MAGIC;
+        EEPROM.put(0, data);
+        EEPROM.commit();
         EEPROM.end();
     }
 
-    // Sprawdzenie stanu rezerwy z histerezą
-    bool checkReserveState(float currentDistance) {
-        if (!m_isInReserve && currentDistance >= m_reserveThreshold) {
-            m_isInReserve = true;
-        } else if (m_isInReserve && currentDistance <= (m_reserveThreshold - m_reserveHysteresis)) {
-            m_isInReserve = false;
-        }
-        return m_isInReserve;
+    // Gettery i settery dla wszystkich pól
+    // WiFi & MQTT
+    const char* getWiFiSSID() const { return data.wifi_ssid; }
+    const char* getWiFiPassword() const { return data.wifi_password; }
+    const char* getMqttServer() const { return data.mqtt_server; }
+    const char* getMqttUser() const { return data.mqtt_user; }
+    const char* getMqttPassword() const { return data.mqtt_password; }
+    uint16_t getMqttPort() const { return data.mqtt_port; }
+    
+    void setWiFiCredentials(const char* ssid, const char* password) {
+        strncpy(data.wifi_ssid, ssid, sizeof(data.wifi_ssid) - 1);
+        strncpy(data.wifi_password, password, sizeof(data.wifi_password) - 1);
+        save();
+    }
+    
+    void setMqttConfig(const char* server, const char* user, const char* password, uint16_t port) {
+        strncpy(data.mqtt_server, server, sizeof(data.mqtt_server) - 1);
+        strncpy(data.mqtt_user, user, sizeof(data.mqtt_user) - 1);
+        strncpy(data.mqtt_password, password, sizeof(data.mqtt_password) - 1);
+        data.mqtt_port = port;
+        save();
+    }
+    
+    // Tank settings
+    float getTankWidth() const { return data.tank_width; }
+    float getTankHeight() const { return data.tank_height; }
+    float getTankDiameter() const { return data.tank_diameter; }
+    float getReserveLevel() const { return data.reserve_level; }
+    
+    void setTankDimensions(float width, float height, float diameter) {
+        data.tank_width = width;
+        data.tank_height = height;
+        data.tank_diameter = diameter;
+        save();
+    }
+    
+    void setReserveLevel(float level) {
+        data.reserve_level = level;
+        save();
+    }
+    
+    // Pump settings
+    uint32_t getPumpDelay() const { return data.pump_delay; }
+    uint32_t getPumpWork() const { return data.pump_work; }
+    
+    void setPumpTiming(uint32_t delay, uint32_t work) {
+        data.pump_delay = delay;
+        data.pump_work = work;
+        save();
+    }
+    
+    // Other settings
+    bool isSoundEnabled() const { return data.sound_enabled; }
+    void setSoundEnabled(bool enabled) {
+        data.sound_enabled = enabled;
+        save();
     }
 };
 
@@ -397,6 +398,12 @@ public:
     bool connectMQTT() {
         if (!WiFi.isConnected()) {
             Serial.println("Brak połączenia WiFi - nie można połączyć z MQTT");
+            return false;
+        }
+
+        // Sprawdź czy mamy wszystkie wymagane parametry MQTT
+        if (strlen(mqtt_broker) == 0) {
+            Serial.println("Brak skonfigurowanego brokera MQTT");
             return false;
         }
 
@@ -537,9 +544,6 @@ void initializeWiFi() {
         if(strlen(new_mqtt_broker) > 0) {
             strncpy(mqtt_broker, new_mqtt_broker, 39);
             mqtt_broker[39] = '\0';
-        } else {
-            // Jeśli broker jest pusty, używamy domyślnej wartości
-            strncpy(mqtt_broker, "192.168.1.14", 39);
         }
         
         const char* port_value = custom_mqtt_port.getValue();
@@ -551,16 +555,12 @@ void initializeWiFi() {
         if(strlen(new_mqtt_user) > 0) {
             strncpy(mqtt_user, new_mqtt_user, 39);
             mqtt_user[39] = '\0';
-        } else {
-            strncpy(mqtt_user, "hydrosense", 39);
         }
         
         const char* new_mqtt_pass = custom_mqtt_pass.getValue();
         if(strlen(new_mqtt_pass) > 0) {
             strncpy(mqtt_password, new_mqtt_pass, 39);
             mqtt_password[39] = '\0';
-        } else {
-            strncpy(mqtt_password, "hydrosense", 39);
         }
         
         Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
@@ -815,6 +815,153 @@ void initializeWiFi() {
         }
     }
 };
+
+class WebServer {
+private:
+    ESP8266WebServer server;
+    Settings& settings;
+    
+    // HTML templates
+    static const char* HTML_HEAD;
+    static const char* HTML_FOOT;
+    
+public:
+    WebServer(Settings& settings) : server(80), settings(settings) {
+        server.on("/", std::bind(&WebServer::handleRoot, this));
+        server.on("/config", HTTP_GET, std::bind(&WebServer::handleConfigGet, this));
+        server.on("/config", HTTP_POST, std::bind(&WebServer::handleConfigPost, this));
+        server.on("/reset", std::bind(&WebServer::handleReset, this));
+        server.begin();
+    }
+    
+    void handle() {
+        server.handleClient();
+    }
+    
+private:
+    void handleRoot() {
+        String html = HTML_HEAD;
+        html += "<h1>HydroSense</h1>";
+        html += "<p><a href='/config'>Konfiguracja</a></p>";
+        html += HTML_FOOT;
+        server.send(200, "text/html", html);
+    }
+    
+    void handleConfigGet() {
+        String html = HTML_HEAD;
+        html += "<h2>Konfiguracja HydroSense</h2>";
+        html += "<form method='post'>";
+        
+        // WiFi & MQTT
+        html += "<h3>WiFi i MQTT</h3>";
+        html += "SSID: <input type='text' name='wifi_ssid' value='" + String(settings.getWiFiSSID()) + "'><br>";
+        html += "Hasło WiFi: <input type='password' name='wifi_pass'><br>";
+        html += "MQTT Server: <input type='text' name='mqtt_server' value='" + String(settings.getMqttServer()) + "'><br>";
+        html += "MQTT Port: <input type='number' name='mqtt_port' value='" + String(settings.getMqttPort()) + "'><br>";
+        html += "MQTT User: <input type='text' name='mqtt_user' value='" + String(settings.getMqttUser()) + "'><br>";
+        html += "MQTT Pass: <input type='password' name='mqtt_pass'><br>";
+        
+        // Tank settings
+        html += "<h3>Zbiornik</h3>";
+        html += "Szerokość (mm): <input type='number' name='tank_width' value='" + String(settings.getTankWidth()) + "'><br>";
+        html += "Wysokość (mm): <input type='number' name='tank_height' value='" + String(settings.getTankHeight()) + "'><br>";
+        html += "Średnica (mm): <input type='number' name='tank_diameter' value='" + String(settings.getTankDiameter()) + "'><br>";
+        html += "Poziom rezerwy (mm): <input type='number' name='reserve_level' value='" + String(settings.getReserveLevel()) + "'><br>";
+        
+        // Pump settings
+        html += "<h3>Pompa</h3>";
+        html += "Opóźnienie (s): <input type='number' name='pump_delay' value='" + String(settings.getPumpDelay()) + "'><br>";
+        html += "Czas pracy (s): <input type='number' name='pump_work' value='" + String(settings.getPumpWork()) + "'><br>";
+        
+        // Other settings
+        html += "<h3>Inne</h3>";
+        html += "Dźwięk: <input type='checkbox' name='sound' " + String(settings.isSoundEnabled() ? "checked" : "") + "><br>";
+        
+        html += "<br><input type='submit' value='Zapisz'>";
+        html += "</form>";
+        
+        html += "<br><form method='post' action='/reset'>";
+        html += "<input type='submit' value='Reset do ustawień fabrycznych' onclick='return confirm(\"Czy na pewno chcesz zresetować wszystkie ustawienia?\")'>";
+        html += "</form>";
+        
+        html += HTML_FOOT;
+        server.send(200, "text/html", html);
+    }
+    
+    void handleConfigPost() {
+        // WiFi & MQTT
+        if (server.hasArg("wifi_ssid") && server.hasArg("wifi_pass")) {
+            settings.setWiFiCredentials(
+                server.arg("wifi_ssid").c_str(),
+                server.arg("wifi_pass").c_str()
+            );
+        }
+        
+        if (server.hasArg("mqtt_server") && server.hasArg("mqtt_port") &&
+            server.hasArg("mqtt_user") && server.hasArg("mqtt_pass")) {
+            settings.setMqttConfig(
+                server.arg("mqtt_server").c_str(),
+                server.arg("mqtt_user").c_str(),
+                server.arg("mqtt_pass").c_str(),
+                server.arg("mqtt_port").toInt()
+            );
+        }
+        
+        // Tank settings
+        if (server.hasArg("tank_width") && server.hasArg("tank_height") && server.hasArg("tank_diameter")) {
+            settings.setTankDimensions(
+                server.arg("tank_width").toFloat(),
+                server.arg("tank_height").toFloat(),
+                server.arg("tank_diameter").toFloat()
+            );
+        }
+        
+        if (server.hasArg("reserve_level")) {
+            settings.setReserveLevel(server.arg("reserve_level").toFloat());
+        }
+        
+        // Pump settings
+        if (server.hasArg("pump_delay") && server.hasArg("pump_work")) {
+            settings.setPumpTiming(
+                server.arg("pump_delay").toInt(),
+                server.arg("pump_work").toInt()
+            );
+        }
+        
+        // Other settings
+        settings.setSoundEnabled(server.hasArg("sound"));
+        
+        server.sendHeader("Location", "/config");
+        server.send(303);
+    }
+    
+    void handleReset() {
+        settings.loadDefaults();
+        server.sendHeader("Location", "/config");
+        server.send(303);
+    }
+};
+
+const char* WebServer::HTML_HEAD = R"html(
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset='utf-8'>
+    <meta name='viewport' content='width=device-width, initial-scale=1'>
+    <title>HydroSense</title>
+    <style>
+        body { font-family: Arial; margin: 20px; }
+        input { margin: 5px 0; }
+        h3 { margin-top: 20px; }
+    </style>
+</head>
+<body>
+)html";
+
+const char* WebServer::HTML_FOOT = R"html(
+</body>
+</html>
+)html";
 
 } // namespace HydroSense
 
