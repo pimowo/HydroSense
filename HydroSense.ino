@@ -49,11 +49,11 @@ const char* MQTT_CLIENT_ID = "HydroSense_ESP8266"; // Dodajemy unikalny identyfi
 
 class WaterLevelSensor {
 public:
-    WaterLevelSensor() : m_lastMeasurement(0), m_distance(0.0f) {}
+    WaterLevelSensor() : lastMeasurement(0), distance(0.0f) {}
     
     float measureDistance() {
-        if (millis() - m_lastMeasurement < SENSOR_CHECK_INTERVAL) {
-            return m_distance;
+        if (millis() - lastMeasurement < SENSOR_CHECK_INTERVAL) {
+            return distance;
         }
         
         // Pomiar z użyciem średniej z 3 odczytów
@@ -69,14 +69,14 @@ public:
             delayMicroseconds(50);
         }
         
-        m_distance = (measurements[0] + measurements[1] + measurements[2]) / 3.0f;
-        m_lastMeasurement = millis();
-        return m_distance;
+        distance = (measurements[0] + measurements[1] + measurements[2]) / 3.0f;
+        lastMeasurement = millis();
+        return distance;
     }
     
 private:
-    unsigned long m_lastMeasurement;
-    float m_distance;
+    unsigned long lastMeasurement;
+    float distance;
 };
 
 class PumpController {
@@ -89,24 +89,24 @@ public:
     };
     
     PumpController() : 
-        m_state(State::IDLE),
-        m_startTime(0),
-        m_pumpDuration(30000), // 30 sekund
-        m_delayDuration(5000)  // 5 sekund
+        state(State::IDLE),
+        startTime(0),
+        pumpDuration(30000), // 30 sekund
+        delayDuration(5000)  // 5 sekund
     {}
     
     void update() {
         unsigned long currentTime = millis();
         
-        switch (m_state) {
+        switch (state) {
             case State::DELAYED_START:
-                if (currentTime - m_startTime >= m_delayDuration) {
+                if (currentTime - startTime >= delayDuration) {
                     startPump();
                 }
                 break;
                 
             case State::RUNNING:
-                if (currentTime - m_startTime >= m_pumpDuration) {
+                if (currentTime - startTime >= pumpDuration) {
                     stopPump();
                 }
                 break;
@@ -117,9 +117,9 @@ public:
     }
     
     void requestStart() {
-        if (m_state == State::IDLE) {
-            m_state = State::DELAYED_START;
-            m_startTime = millis();
+        if (state == State::IDLE) {
+            state = State::DELAYED_START;
+            startTime = millis();
         }
     }
     
@@ -130,163 +130,132 @@ public:
 private:
     void startPump() {
         digitalWrite(PIN_PUMP, HIGH);
-        m_state = State::RUNNING;
-        m_startTime = millis();
+        state = State::RUNNING;
+        startTime = millis();
     }
     
     void stopPump() {
         digitalWrite(PIN_PUMP, LOW);
-        m_state = State::IDLE;
+        state = State::IDLE;
     }
     
-    State m_state;
-    unsigned long m_startTime;
-    unsigned long m_pumpDuration;
-    unsigned long m_delayDuration;
+    State state;
+    unsigned long startTime;
+    unsigned long pumpDuration;
+    unsigned long delayDuration;
 };
 
 class Settings {
 private:
     static const uint32_t SETTINGS_MAGIC = 0xABCD1234;
-    
-    // Struktura przechowująca wszystkie ustawienia
-    struct Data {
-        uint32_t magic;
-        // WiFi & MQTT
-        char wifi_ssid[33];
-        char wifi_password[65];
-        char mqtt_server[40];
-        char mqtt_user[40];
-        char mqtt_password[40];
-        uint16_t mqtt_port;
-        
-        // Ustawienia zbiornika
-        float tank_width;     // mm
-        float tank_height;    // mm
-        float tank_diameter;  // mm
-        float reserve_level;  // mm
-        
-        // Ustawienia pompy
-        uint32_t pump_delay;  // s
-        uint32_t pump_work;   // s
-        
-        // Inne ustawienia
-        bool sound_enabled;
-    } data;
+    uint32_t magic;
+    float tankDiameter;     // mm
+    float tankWidth;        // mm
+    float tankHeight;       // mm
+    float fullDistance;     // mm
+    float emptyDistance;    // mm
+    float reserveLevel;     // mm
+    float reserveHysteresis;// mm
+    bool soundEnabled;
+    bool isInReserve;
 
 public:
     Settings() {
-        loadDefaults();
+        // Domyślne wartości dla zbiornika
+        magic = SETTINGS_MAGIC;
+        tankDiameter = 200.0f;     // Średnica zbiornika w mm
+        tankWidth = 0.0f;          // Szerokość zbiornika w mm (0 = okrągły)
+        tankHeight = 300.0f;       // Wysokość zbiornika w mm
+        fullDistance = 50.0f;      // Odległość czujnika od lustra wody przy pełnym zbiorniku
+        emptyDistance = 300.0f;    // Odległość czujnika od dna pustego zbiornika
+        reserveLevel = 250.0f;     // Próg alarmu rezerwy
+        reserveHysteresis = 20.0f; // Histereza dla stanu rezerwy
+        soundEnabled = true;       // Domyślnie włączamy dźwięk
+        isInReserve = false;       // Początkowy stan rezerwy
     }
+
+    // Gettery
+    float getTankDiameter() const { return tankDiameter; }
+    float getTankWidth() const { return tankWidth; }
+    float getTankHeight() const { return tankHeight; }
+    float getFullDistance() const { return fullDistance; }
+    float getEmptyDistance() const { return emptyDistance; }
+    float getReserveLevel() const { return reserveLevel; }
+    float getReserveThreshold() const { return reserveLevel; } // Alias dla zachowania kompatybilności
+    float getReserveHysteresis() const { return reserveHysteresis; }
+    bool isSoundEnabled() const { return soundEnabled; }
+    bool isInReserve() const { return isInReserve; }
     
-    void loadDefaults() {
-        data.magic = SETTINGS_MAGIC;
-        
-        // Domyślne WiFi & MQTT
-        strcpy(data.wifi_ssid, "");
-        strcpy(data.wifi_password, "");
-        strcpy(data.mqtt_server, "192.168.1.14");
-        strcpy(data.mqtt_user, "hydrosense");
-        strcpy(data.mqtt_password, "hydrosense");
-        data.mqtt_port = 1883;
-        
-        // Domyślne wymiary zbiornika
-        data.tank_width = 300.0f;    // mm
-        data.tank_height = 400.0f;   // mm
-        data.tank_diameter = 315.0f;  // mm
-        data.reserve_level = 50.0f;   // mm
-        
-        // Domyślne czasy pompy
-        data.pump_delay = 5;  // 5 sekund
-        data.pump_work = 30;  // 30 sekund
-        
-        // Inne
-        data.sound_enabled = true;
-        
-        save();
+    // Settery
+    void setTankDiameter(float value) { tankDiameter = value; save(); }
+    void setTankWidth(float value) { tankWidth = value; save(); }
+    void setTankHeight(float value) { tankHeight = value; save(); }
+    void setFullDistance(float value) { fullDistance = value; save(); }
+    void setEmptyDistance(float value) { emptyDistance = value; save(); }
+    void setReserveLevel(float value) { reserveLevel = value; save(); }
+    void setReserveHysteresis(float value) { reserveHysteresis = value; save(); }
+    void setSoundEnabled(bool value) { soundEnabled = value; save(); }
+
+    void save() {
+        EEPROM.begin(512);
+        magic = SETTINGS_MAGIC;
+        EEPROM.put(0, magic);
+        EEPROM.put(4, tankDiameter);
+        EEPROM.put(8, tankWidth);
+        EEPROM.put(12, tankHeight);
+        EEPROM.put(16, fullDistance);
+        EEPROM.put(20, emptyDistance);
+        EEPROM.put(24, reserveLevel);
+        EEPROM.put(28, reserveHysteresis);
+        EEPROM.put(32, soundEnabled);
+        EEPROM.commit();
+        EEPROM.end();
     }
-    
-    bool load() {
+
+    void load() {
         EEPROM.begin(512);
         uint32_t magic;
         EEPROM.get(0, magic);
         
         if (magic != SETTINGS_MAGIC) {
-            Serial.println("Niezainicjalizowany EEPROM - ładuję wartości domyślne");
-            EEPROM.end();
-            loadDefaults();
-            return false;
+            Serial.println("Wykryto niezainicjalizowany EEPROM - resetowanie do wartości domyślnych");
+            reset();
+            return;
         }
         
-        EEPROM.get(0, data);
-        EEPROM.end();
-        return true;
-    }
-    
-    void save() {
-        EEPROM.begin(512);
-        data.magic = SETTINGS_MAGIC;
-        EEPROM.put(0, data);
-        EEPROM.commit();
+        EEPROM.get(4, tankDiameter);
+        EEPROM.get(8, tankWidth);
+        EEPROM.get(12, tankHeight);
+        EEPROM.get(16, fullDistance);
+        EEPROM.get(20, emptyDistance);
+        EEPROM.get(24, reserveLevel);
+        EEPROM.get(28, reserveHysteresis);
+        EEPROM.get(32, soundEnabled);
         EEPROM.end();
     }
 
-    // Gettery i settery dla wszystkich pól
-    // WiFi & MQTT
-    const char* getWiFiSSID() const { return data.wifi_ssid; }
-    const char* getWiFiPassword() const { return data.wifi_password; }
-    const char* getMqttServer() const { return data.mqtt_server; }
-    const char* getMqttUser() const { return data.mqtt_user; }
-    const char* getMqttPassword() const { return data.mqtt_password; }
-    uint16_t getMqttPort() const { return data.mqtt_port; }
-    
-    void setWiFiCredentials(const char* ssid, const char* password) {
-        strncpy(data.wifi_ssid, ssid, sizeof(data.wifi_ssid) - 1);
-        strncpy(data.wifi_password, password, sizeof(data.wifi_password) - 1);
+    void reset() {
+        // Przywracanie wartości domyślnych
+        magic = SETTINGS_MAGIC;
+        tankDiameter = 200.0f;
+        tankWidth = 0.0f;
+        tankHeight = 300.0f;
+        fullDistance = 50.0f;
+        emptyDistance = 300.0f;
+        reserveLevel = 250.0f;
+        reserveHysteresis = 20.0f;
+        soundEnabled = true;
+        isInReserve = false;
         save();
     }
-    
-    void setMqttConfig(const char* server, const char* user, const char* password, uint16_t port) {
-        strncpy(data.mqtt_server, server, sizeof(data.mqtt_server) - 1);
-        strncpy(data.mqtt_user, user, sizeof(data.mqtt_user) - 1);
-        strncpy(data.mqtt_password, password, sizeof(data.mqtt_password) - 1);
-        data.mqtt_port = port;
-        save();
-    }
-    
-    // Tank settings
-    float getTankWidth() const { return data.tank_width; }
-    float getTankHeight() const { return data.tank_height; }
-    float getTankDiameter() const { return data.tank_diameter; }
-    float getReserveLevel() const { return data.reserve_level; }
-    
-    void setTankDimensions(float width, float height, float diameter) {
-        data.tank_width = width;
-        data.tank_height = height;
-        data.tank_diameter = diameter;
-        save();
-    }
-    
-    void setReserveLevel(float level) {
-        data.reserve_level = level;
-        save();
-    }
-    
-    // Pump settings
-    uint32_t getPumpDelay() const { return data.pump_delay; }
-    uint32_t getPumpWork() const { return data.pump_work; }
-    
-    void setPumpTiming(uint32_t delay, uint32_t work) {
-        data.pump_delay = delay;
-        data.pump_work = work;
-        save();
-    }
-    
-    // Other settings
-    bool isSoundEnabled() const { return data.sound_enabled; }
-    void setSoundEnabled(bool enabled) {
-        data.sound_enabled = enabled;
-        save();
+
+    bool checkReserveState(float currentDistance) {
+        if (!isInReserve && currentDistance >= reserveLevel) {
+            isInReserve = true;
+        } else if (isInReserve && currentDistance <= (reserveLevel - reserveHysteresis)) {
+            isInReserve = false;
+        }
+        return isInReserve;
     }
 };
 
@@ -306,24 +275,24 @@ private:
     static constexpr unsigned long UPDATE_INTERVAL = 1000;       // ms
     
     // Komponenty sieciowe
-    WiFiClient m_wifiClient;
-    String m_deviceId;
-    HADevice m_device;
-    HAMqtt m_mqtt;
-    ESP8266WebServer m_webServer;
-    unsigned long m_lastWiFiCheck;
-    unsigned long m_lastMqttRetry;
-    unsigned long m_lastUpdateTime;
+    WiFiClient wifiClient;
+    String deviceId;
+    HADevice device;
+    HAMqtt mqtt;
+    ESP8266WebServer webServer;
+    unsigned long lastWiFiCheck;
+    unsigned long lastMqttRetry;
+    unsigned long lastUpdateTime;
 
     // Sensory HA
-    HASensor m_haWaterLevelSensor;
-    HASensor m_haWaterLevelPercentSensor;
-    HABinarySensor m_reserveSensor;
+    HASensor haWaterLevelSensor;
+    HASensor haWaterLevelPercentSensor;
+    HABinarySensor reserveSensor;
 
     // Inne komponenty
-    Settings m_settings;
-    WaterLevelSensor m_levelSensor;
-    PumpController m_pumpController;
+    Settings settings;
+    WaterLevelSensor levelSensor;
+    PumpController pumpController;
 
     // Przeniesienie metod pomocniczych do klasy
     String createSensorConfig(const char* id, const char* name, const char* unit) {
@@ -332,9 +301,9 @@ private:
         config += "\"device_class\":\"" + String(id) + "\",";
         config += "\"state_topic\":\"hydrosense/" + String(id) + "/state\",";
         config += "\"unit_of_measurement\":\"" + String(unit) + "\",";
-        config += "\"unique_id\":\"hydrosense_" + m_deviceId + "_" + String(id) + "\",";
+        config += "\"unique_id\":\"hydrosense_" + deviceId + "_" + String(id) + "\",";
         config += "\"device\":{";
-        config += "\"identifiers\":[\"hydrosense_" + m_deviceId + "\"],";
+        config += "\"identifiers\":[\"hydrosense_" + deviceId + "\"],";
         config += "\"name\":\"HydroSense\",";
         config += "\"model\":\"HS ESP8266\",";
         config += "\"manufacturer\":\"PMW\"";
@@ -343,40 +312,40 @@ private:
     }
 
     float calculateWaterPercentage(float waterLevel) {
-        float maxLevel = m_settings.getEmptyDistance() - m_settings.getFullDistance();
+        float maxLevel = settings.getEmptyDistance() - settings.getFullDistance();
         if (maxLevel <= 0) return 0.0f;
         
-        float currentLevel = m_settings.getEmptyDistance() - waterLevel;
+        float currentLevel = settings.getEmptyDistance() - waterLevel;
         float percentage = (currentLevel / maxLevel) * 100.0f;
         return constrain(percentage, 0.0f, 100.0f);
     }
 
 public:
     HydroSenseApp() :
-        m_deviceId(String(ESP.getChipId(), HEX)),
-        m_device(m_deviceId.c_str()),
-        m_mqtt(m_wifiClient, m_device, 25),
-        m_webServer(80),
-        m_haWaterLevelSensor("water_level"),
-        m_haWaterLevelPercentSensor("water_level_percent"),
-        m_reserveSensor("reserve"),
-        m_lastWiFiCheck(0),
-        m_lastMqttRetry(0),
-        m_lastUpdateTime(0)
+        deviceId(String(ESP.getChipId(), HEX)),
+        device(deviceId.c_str()),
+        mqtt(wifiClient, device, 25),
+        webServer(80),
+        haWaterLevelSensor("water_level"),
+        haWaterLevelPercentSensor("water_level_percent"),
+        reserveSensor("reserve"),
+        lastWiFiCheck(0),
+        lastMqttRetry(0),
+        lastUpdateTime(0)
     {
         delay(100); // Daj czas na inicjalizację sprzętu
         Serial.println("\n=== HydroSense - Inicjalizacja ===");
         
         // Konfiguracja urządzenia MQTT
-        m_device.setName("HydroSense");
-        m_device.setSoftwareVersion("2.0");
-        m_device.setManufacturer("PMW");
-        m_device.setModel("HS ESP8266");
+        device.setName("HydroSense");
+        device.setSoftwareVersion("2.0");
+        device.setManufacturer("PMW");
+        device.setModel("HS ESP8266");
         
         // Konfiguracja MQTT
-        m_mqtt.setBufferSize(512);
+        mqtt.setBufferSize(512);
         
-        m_settings.load();
+        settings.load();
         delay(50);
         printSettings();
         
@@ -407,26 +376,26 @@ public:
             return false;
         }
 
-        if (!m_mqtt.isConnected()) {
+        if (!mqtt.isConnected()) {
             Serial.printf("\nPróba połączenia z MQTT (WiFi Status: %d):\n", WiFi.status());
             Serial.printf("Broker: %s\n", mqtt_broker);
             Serial.printf("Port: %d\n", mqtt_port);
             Serial.printf("User: %s\n", mqtt_user);
             Serial.printf("Password: %s\n", mqtt_password);
-            Serial.printf("Client ID: %s\n", m_deviceId.c_str());
+            Serial.printf("Client ID: %s\n", deviceId.c_str());
             
             // Rozłącz jeśli było poprzednie połączenie
-            m_mqtt.disconnect();
+            mqtt.disconnect();
             delay(1000);
             
             // Próba połączenia z większą ilością debugowania
-            bool beginResult = m_mqtt.begin(mqtt_broker, mqtt_port, mqtt_user, mqtt_password);
+            bool beginResult = mqtt.begin(mqtt_broker, mqtt_port, mqtt_user, mqtt_password);
             Serial.printf("Begin result: %s\n", beginResult ? "TRUE" : "FALSE");
             
             if (beginResult) {
                 delay(2000); // Czekamy na ustabilizowanie połączenia
                 
-                if (m_mqtt.isConnected()) {
+                if (mqtt.isConnected()) {
                     Serial.println("MQTT Connected successfully!");
                     return true;
                 } else {
@@ -453,7 +422,7 @@ public:
         delay(100); // Daj czas na reset WiFiManager
         
         // Reset własnych ustawień
-        m_settings.reset();
+        settings.reset();
         delay(100); // Daj czas na reset ustawień
         
         // Sygnał zakończenia resetu
@@ -494,7 +463,7 @@ public:
     }
 
     void welcomeBuzzer() {
-        if (!m_settings.isSoundEnabled()) return;
+        if (!settings.isSoundEnabled()) return;
         
         digitalWrite(PIN_BUZZER, HIGH);
         delay(100);
@@ -571,26 +540,26 @@ void initializeWiFi() {
 }
 
     void initializeHomeAssistant() {
-        m_haWaterLevelSensor.setName("Water Level");
-        m_haWaterLevelSensor.setDeviceClass("distance");
-        m_haWaterLevelSensor.setUnitOfMeasurement("mm");
+        haWaterLevelSensor.setName("Water Level");
+        haWaterLevelSensor.setDeviceClass("distance");
+        haWaterLevelSensor.setUnitOfMeasurement("mm");
         
-        m_haWaterLevelPercentSensor.setName("Water Level Percentage");
-        m_haWaterLevelPercentSensor.setUnitOfMeasurement("%");
+        haWaterLevelPercentSensor.setName("Water Level Percentage");
+        haWaterLevelPercentSensor.setUnitOfMeasurement("%");
         
-        m_reserveSensor.setName("Water Reserve");
-        m_reserveSensor.setDeviceClass("problem");
+        reserveSensor.setName("Water Reserve");
+        reserveSensor.setDeviceClass("problem");
         
         delay(5000); // Daj WiFi czas na pełną stabilizację
         connectMQTT();
     }
 
     void initializeWebServer() {
-        m_webServer.on("/", [this]() {
+        webServer.on("/", [this]() {
             handleRoot();
         });
         
-        m_webServer.begin();
+        webServer.begin();
         Serial.println("Serwer WWW uruchomiony");
     }
 
@@ -629,14 +598,14 @@ void initializeWiFi() {
         unsigned long currentTime = millis();
         
         // Sprawdzanie WiFi
-        if (currentTime - m_lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
+        if (currentTime - lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
             checkWiFiConnection();
-            m_lastWiFiCheck = currentTime;
+            lastWiFiCheck = currentTime;
         }
 
         // Obsługa MQTT
         if (WiFi.isConnected()) {
-            if (!m_mqtt.isConnected()) {
+            if (!mqtt.isConnected()) {
                 // Reset licznika prób po timeout
                 if (currentTime - lastMqttReconnectAttempt > MQTT_RECONNECT_TIMEOUT) {
                     mqttReconnectAttempts = 0;
@@ -644,35 +613,35 @@ void initializeWiFi() {
                 
                 // Próbuj ponownego połączenia z ograniczeniem
                 if (mqttReconnectAttempts < 3 && 
-                    currentTime - m_lastMqttRetry >= MQTT_RETRY_INTERVAL) {
+                    currentTime - lastMqttRetry >= MQTT_RETRY_INTERVAL) {
                     if (connectMQTT()) {
                         mqttReconnectAttempts = 0;
                     } else {
                         mqttReconnectAttempts++;
                     }
-                    m_lastMqttRetry = currentTime;
+                    lastMqttRetry = currentTime;
                     lastMqttReconnectAttempt = currentTime;
                 }
             } else {
-                m_mqtt.loop();
+                mqtt.loop();
                 ArduinoOTA.handle();
-                m_webServer.handleClient();
+                webServer.handleClient();
             }
         }
 
         // Aktualizacja stanu
-        if (currentTime - m_lastUpdateTime >= UPDATE_INTERVAL) {
-            if (WiFi.isConnected() && m_mqtt.isConnected()) {
+        if (currentTime - lastUpdateTime >= UPDATE_INTERVAL) {
+            if (WiFi.isConnected() && mqtt.isConnected()) {
                 update();
             }
-            m_lastUpdateTime = currentTime;
+            lastUpdateTime = currentTime;
         }
 
         yield();
     }
 
     void handleRoot() {
-        float waterLevel = m_levelSensor.measureDistance();
+        float waterLevel = levelSensor.measureDistance();
         float percentage = calculateWaterPercentage(waterLevel);
         
         static char buffer[1024];
@@ -683,13 +652,13 @@ void initializeWiFi() {
             "<p>Stan rezerwy: %s</p>"
             "</body></html>",
             waterLevel, percentage,
-            m_settings.checkReserveState(waterLevel) ? "TAK" : "NIE"
+            settings.checkReserveState(waterLevel) ? "TAK" : "NIE"
         );
-        m_webServer.send(200, "text/html", buffer);
+        webServer.send(200, "text/html", buffer);
     }
 
     bool publishHAConfig() {
-        if (!m_mqtt.isConnected()) {
+        if (!mqtt.isConnected()) {
             Serial.println("Próba publikacji bez połączenia MQTT!");
             return false;
         }
@@ -700,7 +669,7 @@ void initializeWiFi() {
         // Water Level sensor
         String config = createSensorConfig("water_level", "Water Level", "mm");
         Serial.println("Publikacja konfiguracji water_level...");
-        if (!m_mqtt.publish("homeassistant/sensor/hydrosense/water_level/config", config.c_str(), true)) {
+        if (!mqtt.publish("homeassistant/sensor/hydrosense/water_level/config", config.c_str(), true)) {
             Serial.println("Błąd publikacji water_level");
             success = false;
         }
@@ -709,7 +678,7 @@ void initializeWiFi() {
         // Water Level Percentage sensor
         config = createSensorConfig("water_level_percent", "Water Level Percentage", "%");
         Serial.println("Publikacja konfiguracji water_level_percent...");
-        if (!m_mqtt.publish("homeassistant/sensor/hydrosense/water_level_percent/config", config.c_str(), true)) {
+        if (!mqtt.publish("homeassistant/sensor/hydrosense/water_level_percent/config", config.c_str(), true)) {
             Serial.println("Błąd publikacji water_level_percent");
             success = false;
         }
@@ -718,7 +687,7 @@ void initializeWiFi() {
         // Reserve sensor
         config = createReserveSensorConfig();
         Serial.println("Publikacja konfiguracji reserve...");
-        if (!m_mqtt.publish("homeassistant/binary_sensor/hydrosense/reserve/config", config.c_str(), true)) {
+        if (mqtt.publish("homeassistant/binary_sensor/hydrosense/reserve/config", config.c_str(), true)) {
             Serial.println("Błąd publikacji reserve");
             success = false;
         }
@@ -727,7 +696,7 @@ void initializeWiFi() {
     }
 
     void update() {
-        float waterLevel = m_levelSensor.measureDistance();
+        float waterLevel = levelSensor.measureDistance();
         updateHomeAssistantSensors(waterLevel);
         checkAlarmsAndNotifications();
     }
@@ -766,11 +735,11 @@ void initializeWiFi() {
 
     void printSettings() {
         Serial.println("Aktualne ustawienia:");
-        Serial.printf("- Średnica zbiornika: %.1f mm\n", m_settings.getTankDiameter());
-        Serial.printf("- Wysokość pełna: %.1f mm\n", m_settings.getFullDistance());
-        Serial.printf("- Wysokość pusta: %.1f mm\n", m_settings.getEmptyDistance());
-        Serial.printf("- Próg rezerwy: %.1f mm\n", m_settings.getReserveThreshold());
-        Serial.printf("- Dźwięk włączony: %s\n", m_settings.isSoundEnabled() ? "Tak" : "Nie");
+        Serial.printf("- Średnica zbiornika: %.1f mm\n", settings.getTankDiameter());
+        Serial.printf("- Wysokość pełna: %.1f mm\n", settings.getFullDistance());
+        Serial.printf("- Wysokość pusta: %.1f mm\n", settings.getEmptyDistance());
+        Serial.printf("- Próg rezerwy: %.1f mm\n", settings.getReserveThreshold());
+        Serial.printf("- Dźwięk włączony: %s\n", settings.isSoundEnabled() ? "Tak" : "Nie");
     }
 
     String createReserveSensorConfig() {
@@ -778,9 +747,9 @@ void initializeWiFi() {
         config += "\"name\":\"Water Reserve\",";
         config += "\"device_class\":\"problem\",";
         config += "\"state_topic\":\"hydrosense/reserve/state\",";
-        config += "\"unique_id\":\"hydrosense_" + m_deviceId + "_reserve\",";
+        config += "\"unique_id\":\"hydrosense_" + deviceId + "_reserve\",";
         config += "\"device\":{";
-        config += "\"identifiers\":[\"hydrosense_" + m_deviceId + "\"],";
+        config += "\"identifiers\":[\"hydrosense_" + deviceId + "\"],";
         config += "\"name\":\"HydroSense\",";
         config += "\"model\":\"HS ESP8266\",";
         config += "\"manufacturer\":\"PMW\"";
@@ -789,8 +758,8 @@ void initializeWiFi() {
     }
 
     void checkAlarmsAndNotifications() {
-        float waterLevel = m_levelSensor.measureDistance();
-        bool shouldAlarm = waterLevel >= m_settings.getReserveThreshold() && m_settings.isSoundEnabled();
+        float waterLevel = levelSensor.measureDistance();
+        bool shouldAlarm = waterLevel >= settings.getReserveThreshold() && settings.isSoundEnabled();
         
         digitalWrite(PIN_BUZZER, shouldAlarm ? HIGH : LOW);
         
@@ -800,16 +769,16 @@ void initializeWiFi() {
     }
 
     void updateHomeAssistantSensors(float waterLevel) {
-        if (m_mqtt.isConnected()) {
+        if (mqtt.isConnected()) {
             String payload = String(waterLevel, 1);
-            m_haWaterLevelSensor.setValue(payload.c_str());
+            haWaterLevelSensor.setValue(payload.c_str());
 
             float percentage = calculateWaterPercentage(waterLevel);
             payload = String(percentage, 1);
-            m_haWaterLevelPercentSensor.setValue(payload.c_str());
+            haWaterLevelPercentSensor.setValue(payload.c_str());
 
-            bool isInReserve = m_settings.checkReserveState(waterLevel);
-            m_reserveSensor.setState(isInReserve);
+            bool isInReserve = settings.checkReserveState(waterLevel);
+            reserveSensor.setState(isInReserve);
 
             Serial.println("Zaktualizowano dane w HA");
         }
