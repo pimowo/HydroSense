@@ -312,57 +312,52 @@ public:
     void initializeWiFi() {
         Serial.println("\nKonfiguracja WiFi...");
         
-        // Pełne czyszczenie pamięci WiFi
+        // Całkowite czyszczenie konfiguracji WiFi
         WiFi.persistent(false);
         WiFi.disconnect(true);
         WiFi.mode(WIFI_OFF);
-        delay(100);
-        
-        // Wyłącz zapisywanie konfiguracji do flash
         ESP.eraseConfig();
-        delay(100);
+        delay(1000); // Dłuższy delay po czyszczeniu
         
-        // Ustaw tryb i podstawową konfigurację
         WiFi.mode(WIFI_STA);
         WiFi.setAutoReconnect(true);
         WiFi.persistent(true);
-        delay(100);
         
-        // Próba połączenia
         Serial.printf("Łączenie z %s \n", WIFI_SSID);
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         
         int attempts = 0;
-        while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-            delay(500);
+        while (WiFi.status() != WL_CONNECTED && attempts < 30) { // Zwiększamy timeout
+            delay(1000); // Dłuższy delay między próbami
             Serial.print(".");
             attempts++;
             
             if (attempts % 5 == 0) {
-                // Status co 5 prób
-                Serial.printf("\nPróba %d/20 - Status: %d, RSSI: %d dBm\n", 
+                Serial.printf("\nPróba %d/30: Status: %d, RSSI: %d dBm\n", 
                     attempts, WiFi.status(), WiFi.RSSI());
                 
-                // Restart ESP jeśli status = 7
+                // Restart połączenia co 5 prób
                 if (WiFi.status() == WL_CONNECT_FAILED) {
-                    Serial.println("Restart ESP...");
-                    ESP.restart();
+                    Serial.println("Restart połączenia...");
+                    WiFi.disconnect();
+                    delay(500);
+                    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
                 }
             }
             ESP.wdtFeed();
         }
-        Serial.println();
         
         if (WiFi.status() == WL_CONNECTED) {
-            Serial.printf("Połączono! IP: %s, RSSI: %d dBm\n", 
-                WiFi.localIP().toString().c_str(),
-                WiFi.RSSI()
-            );
-            
-            // Zapisz udaną konfigurację
-            WiFi.persistent(true);
+            Serial.printf("\nPołączono! IP: %s\nRSSI: %d dBm\n", 
+                WiFi.localIP().toString().c_str(), WiFi.RSSI());
         } else {
-            Serial.printf("Błąd połączenia. Status: %d\n", WiFi.status());
+            Serial.printf("\nBłąd połączenia. Status: %d\n", WiFi.status());
+            
+            // Spróbuj hard reset WiFi
+            Serial.println("Wykonuję hard reset WiFi...");
+            ESP.eraseConfig();
+            delay(1000);
+            ESP.restart();
         }
     }
 
