@@ -1127,6 +1127,7 @@ const char* WebServer::HTML_FOOT = R"html(
 } // namespace HydroSense
 
 HydroSense::HydroSenseApp* app = nullptr;
+Settings settings;
 
 void startWebServer() {
     // Kod inicjalizacji serwera WWW
@@ -1138,7 +1139,7 @@ void setup() {
     Serial.println("=== HydroSense - Inicjalizacja ===");
     
     // Inicjalizacja ustawień
-    loadSettings();
+    settings.load();
     
     // Inicjalizacja serwera WWW
     Serial.println("Inicjalizacja serwera WWW");
