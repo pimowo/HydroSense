@@ -270,6 +270,8 @@ private:
 
     // Przeniesienie metod pomocniczych do klasy
     String createSensorConfig(const char* id, const char* name, const char* unit) {
+        constexpr size_t BUFFER_SIZE = 512;
+        StaticJsonDocument<BUFFER_SIZE> doc;
         String config = "{";
         config += "\"name\":\"" + String(name) + "\",";
         config += "\"device_class\":\"" + String(id) + "\",";
@@ -358,6 +360,10 @@ public:
             return false;
         }
         return true;
+
+        m_mqtt.onDisconnect([this](AsyncMqttClientDisconnectReason reason) {
+            Serial.println("Rozłączono z MQTT");
+        });
     }
 
     void initializePins() {
@@ -545,18 +551,17 @@ public:
     }
 
     void handleRoot() {
-        String html = "<html><body>";
-        html += "<h1>HydroSense</h1>";
-        
-        float waterLevel = m_levelSensor.measureDistance();
-        float percentage = calculateWaterPercentage(waterLevel);
-        
-        html += "<p>Poziom wody: " + String(waterLevel, 1) + " mm (" + String(percentage, 1) + "%)</p>";
-        html += "<p>Stan rezerwy: " + String(m_settings.checkReserveState(waterLevel) ? "TAK" : "NIE") + "</p>";
-        
-        html += "</body></html>";
-        
-        m_webServer.send(200, "text/html", html);
+        static char buffer[1024];
+        snprintf(buffer, sizeof(buffer),
+            "<html><body>"
+            "<h1>HydroSense</h1>"
+            "<p>Poziom wody: %.1f mm (%.1f%%)</p>"
+            "<p>Stan rezerwy: %s</p>"
+            "</body></html>",
+            waterLevel, percentage,
+            m_settings.checkReserveState(waterLevel) ? "TAK" : "NIE"
+        );
+        m_webServer.send(200, "text/html", buffer);
     }
 
     bool publishHAConfig() {
