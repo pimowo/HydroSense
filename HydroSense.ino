@@ -14,13 +14,11 @@
 #include <WiFiManager.h>
 #include <ArduinoJson.h>
 
+// Definicje makr
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 #define BUILD_DATE TOSTRING(__DATE__)
-
 #define STACK_PROTECTOR  512 // bytes
-
-HydroSense::Settings settings;
 
 namespace HydroSense {
 
@@ -1003,6 +1001,9 @@ public:
     }
     
 private:
+    ESP8266WebServer server;
+    Settings& settings;
+
     void handleRoot() {
         String html = HTML_HEAD;
         html += "<h1>HydroSense</h1>";
@@ -1132,15 +1133,15 @@ const char* WebServer::HTML_FOOT = R"html(
 
 } // namespace HydroSense
 
-HydroSense::HydroSenseApp* app = nullptr;
-
-using namespace HydroSense;
-
+// Deklaracja zmiennych globalnych
 HydroSense::Settings settings;
+HydroSense::HydroSenseApp* app = nullptr;
+HydroSense::WebServer* webServer = nullptr;
 
 void startWebServer() {
-    static HydroSense::WebServer webServer(settings);
-    webServer.begin();
+    static HydroSense::WebServer webServerInstance(settings);
+    webServer = &webServerInstance;
+    webServer->begin();
     Serial.println("Serwer WWW uruchomiony");
 }
 
@@ -1159,6 +1160,8 @@ void loop() {
     if (app) {
         app->run();
     }
-    webServer.handle();
+    if (webServer) {
+        webServer->handle();
+    }
     yield();
 }
