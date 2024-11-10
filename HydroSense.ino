@@ -20,6 +20,8 @@
 
 #define STACK_PROTECTOR  512 // bytes
 
+HydroSense::Settings settings;
+
 namespace HydroSense {
 
 // Konfiguracja pinów
@@ -1134,8 +1136,10 @@ HydroSense::HydroSenseApp* app = nullptr;
 
 using namespace HydroSense;
 
+HydroSense::Settings settings;
+
 void startWebServer() {
-    static WebServer webServer(settings);
+    static HydroSense::WebServer webServer(settings);
     webServer.begin();
     Serial.println("Serwer WWW uruchomiony");
 }
