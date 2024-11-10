@@ -147,68 +147,21 @@ private:
 
 class Settings {
 private:
-    float m_tankDiameter = 315.0f;     // mm
-    float m_fullDistance = 50.0f;      // mm
-    float m_emptyDistance = 300.0f;    // mm
-    float m_reserveThreshold = 250.0f; // mm - próg rezerwy
-    float m_reserveHysteresis = 20.0f; // mm - histereza
-    bool m_soundEnabled = true;
-    bool m_isInReserve = false;        // stan rezerwy
+    static const uint32_t SETTINGS_MAGIC = 0xABCD1234;
+    uint32_t m_magic;
+    float m_tankDiameter;     // mm
+    float m_fullDistance;     // mm
+    float m_emptyDistance;    // mm
+    float m_reserveThreshold; // mm
+    float m_reserveHysteresis;// mm
+    bool m_soundEnabled;
+    bool m_isInReserve;
 
 public:
-    // Gettery
-    float getTankDiameter() const { return m_tankDiameter; }
-    float getFullDistance() const { return m_fullDistance; }
-    float getEmptyDistance() const { return m_emptyDistance; }
-    float getReserveThreshold() const { return m_reserveThreshold; }
-    float getReserveHysteresis() const { return m_reserveHysteresis; }
-    bool isSoundEnabled() const { return m_soundEnabled; }
-    bool isInReserve() const { return m_isInReserve; }
-    
-    // Settery
-    void setTankDiameter(float value) { m_tankDiameter = value; save(); }
-    void setFullDistance(float value) { m_fullDistance = value; save(); }
-    void setEmptyDistance(float value) { m_emptyDistance = value; save(); }
-    void setReserveThreshold(float value) { m_reserveThreshold = value; save(); }
-    void setReserveHysteresis(float value) { m_reserveHysteresis = value; save(); }
-    void setSoundEnabled(bool value) { m_soundEnabled = value; save(); }
-    
-    void load() {
-        EEPROM.begin(512);
-        EEPROM.get(0, m_tankDiameter);
-        EEPROM.get(4, m_fullDistance);
-        EEPROM.get(8, m_emptyDistance);
-        EEPROM.get(12, m_reserveThreshold);
-        EEPROM.get(16, m_reserveHysteresis);
-        EEPROM.get(20, m_soundEnabled);
-        EEPROM.end();
-    }
-
-    void save() {
-        EEPROM.begin(512);
-        EEPROM.put(0, m_tankDiameter);
-        EEPROM.put(4, m_fullDistance);
-        EEPROM.put(8, m_emptyDistance);
-        EEPROM.put(12, m_reserveThreshold);
-        EEPROM.put(16, m_reserveHysteresis);
-        EEPROM.put(20, m_soundEnabled);
-        EEPROM.commit();
-        EEPROM.end();
-    }
-    
-    // Sprawdzenie stanu rezerwy z histerezą
-    bool checkReserveState(float currentDistance) {
-        if (!m_isInReserve && currentDistance >= m_reserveThreshold) {
-            m_isInReserve = true;
-        } else if (m_isInReserve && currentDistance <= (m_reserveThreshold - m_reserveHysteresis)) {
-            m_isInReserve = false;
-        }
-        return m_isInReserve;
-    }
-
-    // Konstruktor z wartościami domyślnymi
+    // Konstruktor
     Settings() {
         // Domyślne wartości dla zbiornika
+        m_magic = SETTINGS_MAGIC;
         m_tankDiameter = 315.0f;     // Średnica zbiornika w mm
         m_fullDistance = 50.0f;      // Odległość czujnika od lustra wody przy pełnym zbiorniku
         m_emptyDistance = 300.0f;    // Odległość czujnika od dna pustego zbiornika
@@ -233,18 +186,106 @@ public:
         Serial.printf("- Dźwięk włączony: %s\n", m_soundEnabled ? "Tak" : "Nie");
     }
 
-    void reset() {
-        // Przywróć wartości domyślne
-        m_tankDiameter = 315.0f;     // Średnica zbiornika w mm
-        m_fullDistance = 50.0f;      // Odległość czujnika od lustra wody przy pełnym zbiorniku
-        m_emptyDistance = 300.0f;    // Odległość czujnika od dna pustego zbiornika
-        m_reserveThreshold = 250.0f; // Próg alarmu rezerwy
-        m_reserveHysteresis = 20.0f; // Histereza dla stanu rezerwy
-        m_soundEnabled = true;       // Domyślnie włączamy dźwięk
-        m_isInReserve = false;       // Stan rezerwy
+    // Gettery
+    float getTankDiameter() const { return m_tankDiameter; }
+    float getFullDistance() const { return m_fullDistance; }
+    float getEmptyDistance() const { return m_emptyDistance; }
+    float getReserveThreshold() const { return m_reserveThreshold; }
+    float getReserveHysteresis() const { return m_reserveHysteresis; }
+    bool isSoundEnabled() const { return m_soundEnabled; }
+    bool isInReserve() const { return m_isInReserve; }
+    
+    // Settery
+    void setTankDiameter(float value) { m_tankDiameter = value; save(); }
+    void setFullDistance(float value) { m_fullDistance = value; save(); }
+    void setEmptyDistance(float value) { m_emptyDistance = value; save(); }
+    void setReserveThreshold(float value) { m_reserveThreshold = value; save(); }
+    void setReserveHysteresis(float value) { m_reserveHysteresis = value; save(); }
+    void setSoundEnabled(bool value) { m_soundEnabled = value; save(); }
+
+    void save() {
+        EEPROM.begin(512);
+        m_magic = SETTINGS_MAGIC;
+        EEPROM.put(0, m_magic);
+        EEPROM.put(4, m_tankDiameter);
+        EEPROM.put(8, m_fullDistance);
+        EEPROM.put(12, m_emptyDistance);
+        EEPROM.put(16, m_reserveThreshold);
+        EEPROM.put(20, m_reserveHysteresis);
+        EEPROM.put(24, m_soundEnabled);
+        EEPROM.commit();
+        EEPROM.end();
+    }
+
+    void load() {
+        EEPROM.begin(512);
+        uint32_t magic;
+        EEPROM.get(0, magic);
         
-        // Zapisz wartości domyślne do EEPROM
-        save();
+        if (magic != SETTINGS_MAGIC) {
+            Serial.println("Wykryto niezainicjalizowany EEPROM - resetowanie do wartości domyślnych");
+            reset();
+            return;
+        }
+        
+        EEPROM.get(4, m_tankDiameter);
+        EEPROM.get(8, m_fullDistance);
+        EEPROM.get(12, m_emptyDistance);
+        EEPROM.get(16, m_reserveThreshold);
+        EEPROM.get(20, m_reserveHysteresis);
+        EEPROM.get(24, m_soundEnabled);
+        EEPROM.end();
+    }
+
+    void reset() {
+        EEPROM.begin(512);
+        
+        // Przywróć wartości domyślne
+        m_magic = SETTINGS_MAGIC;
+        m_tankDiameter = 315.0f;
+        m_fullDistance = 50.0f;
+        m_emptyDistance = 300.0f;
+        m_reserveThreshold = 250.0f;
+        m_reserveHysteresis = 20.0f;
+        m_soundEnabled = true;
+        m_isInReserve = false;
+        
+        // Wyczyść cały EEPROM
+        for (int i = 0; i < 512; i++) {
+            EEPROM.write(i, 0);
+        }
+        
+        // Zapisz wartości domyślne
+        EEPROM.put(0, m_magic);
+        EEPROM.put(4, m_tankDiameter);
+        EEPROM.put(8, m_fullDistance);
+        EEPROM.put(12, m_emptyDistance);
+        EEPROM.put(16, m_reserveThreshold);
+        EEPROM.put(20, m_reserveHysteresis);
+        EEPROM.put(24, m_soundEnabled);
+        
+        if (EEPROM.commit()) {
+            Serial.println("Reset ustawień - zapisano domyślne wartości");
+            tone(PIN_BUZZER, 2000, 200); // Potwierdzenie dźwiękowe
+        } else {
+            Serial.println("Błąd zapisu EEPROM!");
+            // Sygnał błędu
+            tone(PIN_BUZZER, 500, 100);
+            delay(100);
+            tone(PIN_BUZZER, 500, 100);
+        }
+        
+        EEPROM.end();
+    }
+
+    // Sprawdzenie stanu rezerwy z histerezą
+    bool checkReserveState(float currentDistance) {
+        if (!m_isInReserve && currentDistance >= m_reserveThreshold) {
+            m_isInReserve = true;
+        } else if (m_isInReserve && currentDistance <= (m_reserveThreshold - m_reserveHysteresis)) {
+            m_isInReserve = false;
+        }
+        return m_isInReserve;
     }
 };
 
@@ -402,18 +443,26 @@ public:
     }
 
     void resetAll() {
+        Serial.println("Rozpoczynam pełny reset urządzenia...");
+        
+        // Potwierdzenie dźwiękowe rozpoczęcia resetu
+        tone(PIN_BUZZER, 2000, 200);
+        delay(300);
+        
         // Reset WiFiManager
         wm.resetSettings();
+        delay(100); // Daj czas na reset WiFiManager
         
         // Reset własnych ustawień
         m_settings.reset();
+        delay(100); // Daj czas na reset ustawień
         
-        // Czyszczenie EEPROM
-        for (int i = 0; i < 512; i++) {
-            EEPROM.write(i, 0);
-        }
-        EEPROM.commit();
+        // Sygnał zakończenia resetu
+        tone(PIN_BUZZER, 1000, 200);
+        delay(300);
+        tone(PIN_BUZZER, 2000, 200);
         
+        Serial.println("Reset zakończony - restartuję urządzenie...");
         delay(1000);
         ESP.restart();
     }
@@ -438,22 +487,9 @@ public:
             
             // Po 3 sekundach - resetowanie
             if (buttonHoldTime >= 3000) {
-                // Sygnał potwierdzający reset
-                tone(PIN_BUZZER, 1000, 200);
-                delay(300);
-                tone(PIN_BUZZER, 2000, 200);
-                
-                Serial.println("Reset ustawień...");
-                
-                // Reset WiFiManager
-                wm.resetSettings();
-                
-                // Reset własnych ustawień
-                m_settings.reset();
-                
-                delay(1000);
-                Serial.println("Restart urządzenia...");
-                ESP.restart();
+                Serial.println("Wykryto długie przytrzymanie przycisku - rozpoczynam reset...");
+                resetAll();
+                return;
             }
         }
     }
