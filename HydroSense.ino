@@ -232,6 +232,20 @@ public:
         Serial.printf("- Histereza rezerwy: %.1f mm\n", m_reserveHysteresis);
         Serial.printf("- Dźwięk włączony: %s\n", m_soundEnabled ? "Tak" : "Nie");
     }
+
+    void reset() {
+        // Przywróć wartości domyślne
+        m_tankDiameter = 315.0f;     // Średnica zbiornika w mm
+        m_fullDistance = 50.0f;      // Odległość czujnika od lustra wody przy pełnym zbiorniku
+        m_emptyDistance = 300.0f;    // Odległość czujnika od dna pustego zbiornika
+        m_reserveThreshold = 250.0f; // Próg alarmu rezerwy
+        m_reserveHysteresis = 20.0f; // Histereza dla stanu rezerwy
+        m_soundEnabled = true;       // Domyślnie włączamy dźwięk
+        m_isInReserve = false;       // Stan rezerwy
+        
+        // Zapisz wartości domyślne do EEPROM
+        save();
+    }
 };
 
 // Główna klasa aplikacji
@@ -311,6 +325,15 @@ public:
         delay(100); // Daj czas na inicjalizację sprzętu
         Serial.println("\n=== HydroSense - Inicjalizacja ===");
         
+        // Konfiguracja urządzenia MQTT
+        m_device.setName("HydroSense");
+        m_device.setSoftwareVersion("2.0");
+        m_device.setManufacturer("PMW");
+        m_device.setModel("HS ESP8266");
+        
+        // Konfiguracja MQTT
+        m_mqtt.setBufferSize(512);
+        
         m_settings.load();
         delay(50);
         printSettings();
@@ -337,41 +360,82 @@ public:
         }
 
         if (!m_mqtt.isConnected()) {
-            Serial.printf("Łączenie z MQTT (%s:%d)...", mqtt_broker, mqtt_port);
+            Serial.printf("\nPróba połączenia z MQTT:\n");
+            Serial.printf("Broker: %s\n", mqtt_broker);
+            Serial.printf("Port: %d\n", mqtt_port);
+            Serial.printf("User: %s\n", mqtt_user);
+            Serial.printf("Password: %s\n", mqtt_password);
             
             m_mqtt.disconnect();
-            delay(500);
+            delay(1000); // Zwiększamy opóźnienie przed ponownym połączeniem
             
-            for (int i = 0; i < 3; i++) {
-                if (m_mqtt.begin(mqtt_broker, mqtt_port, mqtt_user, mqtt_password)) {
-                    Serial.println("Połączono!");
-                    delay(1000);
-                    
-                    if (m_mqtt.isConnected()) {
-                        if (publishHAConfig()) {
-                            return true;
-                        }
+            // Dodajemy więcej parametrów połączenia
+            HADevice device(m_deviceId.c_str());
+            device.setName("HydroSense");
+            device.setSoftwareVersion("2.0");
+            device.setManufacturer("PMW");
+            device.setModel("HS ESP8266");
+            
+            if (m_mqtt.begin(mqtt_broker, mqtt_port, mqtt_user, mqtt_password)) {
+                Serial.println("Połączenie MQTT zainicjowane");
+                delay(2000); // Dajemy więcej czasu na stabilizację połączenia
+                
+                if (m_mqtt.isConnected()) {
+                    Serial.println("MQTT Connected - próba publikacji konfiguracji");
+                    if (publishHAConfig()) {
+                        Serial.println("Konfiguracja HA opublikowana pomyślnie");
+                        return true;
+                    } else {
+                        Serial.println("Błąd publikacji konfiguracji HA");
                     }
+                } else {
+                    Serial.println("MQTT nie jest połączone po begin()");
                 }
-                delay(1000);
+            } else {
+                Serial.println("Błąd inicjalizacji MQTT");
             }
-            Serial.println("Błąd połączenia!");
+            
+            Serial.println("Połączenie MQTT nie powiodło się");
             return false;
         }
         return true;
     }
 
+    void resetSettings() {
+        // Sygnał dźwiękowy - start resetowania
+        tone(PIN_BUZZER, 2000, 200);
+        delay(300);
+        
+        // Kasowanie ustawień
+        wm.resetSettings();
+        m_settings.reset();
+        
+        // Sygnał dźwiękowy - koniec resetowania
+        tone(PIN_BUZZER, 1000, 200);
+        delay(300);
+        tone(PIN_BUZZER, 2000, 200);
+        
+        delay(1000);
+        Serial.println("Ustawienia skasowane - restart...");
+        ESP.restart();
+    }
+
     void initializePins() {
         pinMode(PIN_TRIG, OUTPUT);
         pinMode(PIN_ECHO, INPUT);
+        pinMode(PIN_BUTTON, INPUT_PULLUP);
         pinMode(PIN_BUZZER, OUTPUT);
-        digitalWrite(PIN_BUZZER, LOW);
-
-        // Sprawdź czy przycisk jest wciśnięty przy starcie
-        if(digitalRead(PIN_BUTTON) == LOW) {
-            Serial.println("Przycisk wciśnięty - reset ustawień WiFi");
-            wm.resetSettings();
-            ESP.restart();
+        
+        // Sprawdzenie przycisku podczas startu
+        int buttonHoldTime = 0;
+        while (digitalRead(PIN_BUTTON) == LOW) { // Przycisk wciśnięty
+            delay(100);
+            buttonHoldTime += 100;
+            
+            // Po 3 sekundach trzymania
+            if (buttonHoldTime == 3000) {
+                resetSettings();
+            }
         }
     }
 
@@ -383,7 +447,7 @@ public:
         digitalWrite(PIN_BUZZER, LOW);
     }
 
-    void initializeWiFi() {
+void initializeWiFi() {
     Serial.println("\nKonfiguracja WiFi...");
     
     // Parametry dla MQTT
@@ -398,17 +462,13 @@ public:
     wm.setConnectTimeout(30);
     wm.setDebugOutput(true);
     
-    yield(); // Dodaj yield przed dodaniem parametrów
-    
     wm.addParameter(&custom_mqtt_server);
     wm.addParameter(&custom_mqtt_port);
     wm.addParameter(&custom_mqtt_user);
     wm.addParameter(&custom_mqtt_pass);
     
-    yield(); // Dodaj yield przed autoConnect
-    
     bool configSuccess = false;
-    for(int i = 0; i < 3; i++) { // Próbuj 3 razy
+    for(int i = 0; i < 3; i++) {
         if(wm.autoConnect("HydroSense-Setup")) {
             configSuccess = true;
             break;
@@ -425,23 +485,41 @@ public:
     if(WiFi.status() == WL_CONNECTED) {
         Serial.println("Połączono z WiFi!");
         
-        yield(); // Dodaj yield przed zapisem konfiguracji
+        // Sprawdzamy czy parametry MQTT nie są puste
+        const char* new_mqtt_broker = custom_mqtt_server.getValue();
+        if(strlen(new_mqtt_broker) > 0) {
+            strncpy(mqtt_broker, new_mqtt_broker, 39);
+            mqtt_broker[39] = '\0';
+        } else {
+            // Jeśli broker jest pusty, używamy domyślnej wartości
+            strncpy(mqtt_broker, "192.168.1.14", 39);
+        }
         
-        // Zapisz parametry MQTT
-        strncpy(mqtt_broker, custom_mqtt_server.getValue(), 39);
-        mqtt_broker[39] = '\0';
+        const char* port_value = custom_mqtt_port.getValue();
+        if(strlen(port_value) > 0) {
+            mqtt_port = atoi(port_value);
+        }
         
-        mqtt_port = atoi(custom_mqtt_port.getValue());
+        const char* new_mqtt_user = custom_mqtt_user.getValue();
+        if(strlen(new_mqtt_user) > 0) {
+            strncpy(mqtt_user, new_mqtt_user, 39);
+            mqtt_user[39] = '\0';
+        } else {
+            strncpy(mqtt_user, "hydrosense", 39);
+        }
         
-        strncpy(mqtt_user, custom_mqtt_user.getValue(), 39);
-        mqtt_user[39] = '\0';
-        
-        strncpy(mqtt_password, custom_mqtt_pass.getValue(), 39);
-        mqtt_password[39] = '\0';
+        const char* new_mqtt_pass = custom_mqtt_pass.getValue();
+        if(strlen(new_mqtt_pass) > 0) {
+            strncpy(mqtt_password, new_mqtt_pass, 39);
+            mqtt_password[39] = '\0';
+        } else {
+            strncpy(mqtt_password, "hydrosense", 39);
+        }
         
         Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
         Serial.printf("MQTT Server: %s\n", mqtt_broker);
         Serial.printf("MQTT Port: %d\n", mqtt_port);
+        Serial.printf("MQTT User: %s\n", mqtt_user);
     }
 }
 
@@ -568,44 +646,36 @@ public:
             return false;
         }
         
-        String config;
+        // Dodajemy delay między publikacjami i sprawdzamy status każdej
+        bool success = true;
         
-        // Debugowanie połączenia
-        Serial.println("Status MQTT przed publikacją: " + String(m_mqtt.isConnected() ? "Połączony" : "Rozłączony"));
-        
-        // Konfiguracja czujnika poziomu wody
-        config = createSensorConfig("water_level", "Water Level", "mm");
-        Serial.println("Próba publikacji water_level config...");
-        Serial.println("Temat: homeassistant/sensor/hydrosense/water_level/config");
-        Serial.println("Zawartość: " + config);
-        
-        if (!m_mqtt.publish("homeassistant/sensor/hydrosense/water_level/config", config.c_str())) {
-            Serial.println("Błąd publikacji konfiguracji water_level");
-            return false;
+        // Water Level sensor
+        String config = createSensorConfig("water_level", "Water Level", "mm");
+        Serial.println("Publikacja konfiguracji water_level...");
+        if (!m_mqtt.publish("homeassistant/sensor/hydrosense/water_level/config", config.c_str(), true)) {
+            Serial.println("Błąd publikacji water_level");
+            success = false;
         }
-        Serial.println("Opublikowano water_level config");
-        delay(100);  // Zwiększamy opóźnienie
+        delay(500);
         
-        // Konfiguracja czujnika procentowego
+        // Water Level Percentage sensor
         config = createSensorConfig("water_level_percent", "Water Level Percentage", "%");
-        Serial.println("Próba publikacji water_level_percent config...");
-        if (!m_mqtt.publish("homeassistant/sensor/hydrosense/water_level_percent/config", config.c_str())) {
-            Serial.println("Błąd publikacji konfiguracji water_level_percent");
-            return false;
+        Serial.println("Publikacja konfiguracji water_level_percent...");
+        if (!m_mqtt.publish("homeassistant/sensor/hydrosense/water_level_percent/config", config.c_str(), true)) {
+            Serial.println("Błąd publikacji water_level_percent");
+            success = false;
         }
-        Serial.println("Opublikowano water_level_percent config");
-        delay(100);
+        delay(500);
         
-        // Konfiguracja czujnika rezerwy
+        // Reserve sensor
         config = createReserveSensorConfig();
-        Serial.println("Próba publikacji reserve config...");
-        if (!m_mqtt.publish("homeassistant/binary_sensor/hydrosense/reserve/config", config.c_str())) {
-            Serial.println("Błąd publikacji konfiguracji reserve");
-            return false;
+        Serial.println("Publikacja konfiguracji reserve...");
+        if (!m_mqtt.publish("homeassistant/binary_sensor/hydrosense/reserve/config", config.c_str(), true)) {
+            Serial.println("Błąd publikacji reserve");
+            success = false;
         }
-        Serial.println("Opublikowano reserve config");
         
-        return true;
+        return success;
     }
 
     void update() {
