@@ -37,6 +37,13 @@ constexpr float TANK_DIAMETER_MAX = 250.0f;          // mm
 const char* WIFI_SSID = "pimowo";
 const char* WIFI_PASSWORD = "ckH59LRZQzCDQFiUgj";
 
+// Konfiguracja MQTT
+const char* MQTT_BROKER = "192.168.1.14";
+const uint16_t MQTT_PORT = 1883;
+const char* MQTT_USER = "hydrosense";
+const char* MQTT_PASSWORD = "hydrosense";
+const char* MQTT_CLIENT_ID = "HydroSense_ESP8266"; // Dodajemy unikalny identyfikator klienta
+
 class WaterLevelSensor {
 public:
     WaterLevelSensor() : m_lastMeasurement(0), m_distance(0.0f) {}
@@ -281,33 +288,63 @@ public:
     }
 
     void initializeWiFi() {
-        WiFi.mode(WIFI_STA);
-        WiFi.setSleepMode(WIFI_NONE_SLEEP);
-        delay(100);
+        Serial.println("\nKonfiguracja WiFi...");
+        Serial.printf("Próba połączenia z siecią: %s\n", WIFI_SSID);
         
-        Serial.print("\nŁączenie z WiFi");
+        // Reset konfiguracji WiFi
+        WiFi.disconnect(true);
+        WiFi.softAPdisconnect(true);
+        delay(200);
+        
+        // Podstawowa konfiguracja
+        WiFi.persistent(false);
+        WiFi.mode(WIFI_STA);
+        
+        // Wyłącz oszczędzanie energii
+        WiFi.setSleepMode(WIFI_NONE_SLEEP);
+        wifi_set_sleep_type(NONE_SLEEP_T);
+        
+        delay(200);
+        
+        // Rozpocznij połączenie
+        Serial.printf("Siła sygnału przed połączeniem: %d dBm\n", WiFi.RSSI());
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         
-        int attempts = 0;
-        while (WiFi.status() != WL_CONNECTED && attempts < 20) {
-            delay(250);
-            Serial.print(".");
-            yield();
-            attempts++;
+        // Prosta pętla z timeoutem i więcej informacji diagnostycznych
+        uint8_t timeout = 0;
+        while (WiFi.status() != WL_CONNECTED && timeout < 20) {
+            delay(500);
+            timeout++;
             
-            if (attempts % 4 == 0) {
-                Serial.println();
-                Serial.printf("Próba %d/20, RSSI: %d dBm\n", attempts, WiFi.RSSI());
+            if (timeout % 5 == 0) {
+                Serial.printf("\nPróba %d/20: ", timeout);
+                switch (WiFi.status()) {
+                    case WL_IDLE_STATUS: Serial.println("Idle"); break;
+                    case WL_NO_SSID_AVAIL: Serial.println("Nie znaleziono sieci"); break;
+                    case WL_SCAN_COMPLETED: Serial.println("Skanowanie zakończone"); break;
+                    case WL_CONNECT_FAILED: Serial.println("Połączenie nieudane"); break;
+                    case WL_CONNECTION_LOST: Serial.println("Utracono połączenie"); break;
+                    case WL_DISCONNECTED: Serial.println("Rozłączono"); break;
+                    default: Serial.printf("Status: %d\n", WiFi.status()); break;
+                }
+                Serial.printf("RSSI: %d dBm\n", WiFi.RSSI());
+            } else {
+                Serial.print(".");
             }
+            ESP.wdtFeed();
         }
         Serial.println();
         
         if (WiFi.status() == WL_CONNECTED) {
-            Serial.printf("Połączono z WiFi, IP: %s, RSSI: %d dBm\n", 
-                         WiFi.localIP().toString().c_str(), 
-                         WiFi.RSSI());
+            Serial.printf("Połączono! \nIP: %s\nRSSI: %d dBm\nBSSID: %s\nKanał: %d\n", 
+                WiFi.localIP().toString().c_str(),
+                WiFi.RSSI(),
+                WiFi.BSSIDstr().c_str(),
+                WiFi.channel()
+            );
         } else {
-            Serial.println("Nie udało się połączyć z WiFi!");
+            Serial.println("Nie udało się połączyć.");
+            Serial.printf("Ostatni status: %d\n", WiFi.status());
         }
     }
 
@@ -361,31 +398,50 @@ public:
     }
 
     void run() {
+        static unsigned long lastYield = 0;
+        static unsigned long lastMqttReconnectAttempt = 0;
+        static uint8_t mqttReconnectAttempts = 0;
+        const unsigned long MQTT_RECONNECT_TIMEOUT = 60000; // 1 minuta między resetem licznika prób
+        
         unsigned long currentTime = millis();
         
-        // Sprawdzanie i obsługa WiFi
+        // Sprawdzanie WiFi
         if (currentTime - m_lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
             checkWiFiConnection();
             m_lastWiFiCheck = currentTime;
         }
 
-        // Jeśli WiFi jest połączone, obsługuj MQTT i inne usługi
-        if (WiFi.status() == WL_CONNECTED) {
+        // Obsługa MQTT
+        if (WiFi.isConnected()) {
             if (!m_mqtt.isConnected()) {
-                if (currentTime - m_lastMqttRetry >= MQTT_RETRY_INTERVAL) {
-                    connectMQTT();
-                    m_lastMqttRetry = currentTime;
+                // Reset licznika prób po timeout
+                if (currentTime - lastMqttReconnectAttempt > MQTT_RECONNECT_TIMEOUT) {
+                    mqttReconnectAttempts = 0;
                 }
+                
+                // Próbuj ponownego połączenia z ograniczeniem
+                if (mqttReconnectAttempts < 3 && 
+                    currentTime - m_lastMqttRetry >= MQTT_RETRY_INTERVAL) {
+                    if (connectMQTT()) {
+                        mqttReconnectAttempts = 0;
+                    } else {
+                        mqttReconnectAttempts++;
+                    }
+                    m_lastMqttRetry = currentTime;
+                    lastMqttReconnectAttempt = currentTime;
+                }
+            } else {
+                m_mqtt.loop();
+                ArduinoOTA.handle();
+                m_webServer.handleClient();
             }
-            
-            m_mqtt.loop();
-            ArduinoOTA.handle();
-            m_webServer.handleClient();
         }
 
-        // Aktualizacja stanu urządzenia
+        // Aktualizacja stanu
         if (currentTime - m_lastUpdateTime >= UPDATE_INTERVAL) {
-            update();
+            if (WiFi.isConnected() && m_mqtt.isConnected()) {
+                update();
+            }
             m_lastUpdateTime = currentTime;
         }
 
@@ -408,41 +464,95 @@ public:
     }
 
     bool connectMQTT() {
+        if (!WiFi.isConnected()) {
+            Serial.println("Brak połączenia WiFi - nie można połączyć z MQTT");
+            return false;
+        }
+
         if (!m_mqtt.isConnected()) {
-            Serial.print("Łączenie z MQTT (");
-            Serial.print(MQTT_BROKER);
-            Serial.print(")...");
+            Serial.printf("Łączenie z MQTT (%s:%d)...", MQTT_BROKER, MQTT_PORT);
             
+            // Rozłącz się najpierw, jeśli było poprzednie połączenie
+            m_mqtt.disconnect();
+            delay(100);
+            
+            // Próba połączenia z dodatkowym ID klienta
             if (m_mqtt.begin(MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASSWORD)) {
                 Serial.println("Połączono!");
-                publishHAConfig();
-                float waterLevel = m_levelSensor.measureDistance();
-                updateHomeAssistantSensors(waterLevel);
-                return true;
+                delay(500);  // Dłuższy delay po połączeniu
+                
+                // Debugowanie stanu połączenia
+                Serial.printf("Stan połączenia MQTT po begin(): %s\n", 
+                            m_mqtt.isConnected() ? "Połączony" : "Rozłączony");
+                
+                // Spróbuj opublikować prosty test
+                if (m_mqtt.publish("hydrosense/test", "test")) {
+                    Serial.println("Test publikacji udany");
+                    
+                    // Teraz próbujemy opublikować konfigurację
+                    if (publishHAConfig()) {
+                        Serial.println("Konfiguracja HA opublikowana pomyślnie");
+                        return true;
+                    } else {
+                        Serial.println("Błąd publikacji konfiguracji HA");
+                        return false;
+                    }
+                } else {
+                    Serial.println("Test publikacji nieudany");
+                    return false;
+                }
             } else {
-                Serial.println("Błąd!");
+                Serial.println("Błąd połączenia!");
                 return false;
             }
         }
         return true;
     }
 
-    void publishHAConfig() {
-        if (m_mqtt.isConnected()) {
-            String config;
-            
-            // Konfiguracja czujnika poziomu wody
-            config = createSensorConfig("water_level", "Water Level", "mm");
-            m_mqtt.publish("homeassistant/sensor/hydrosense/water_level/config", config.c_str());
-            
-            // Konfiguracja czujnika procentowego
-            config = createSensorConfig("water_level_percent", "Water Level Percentage", "%");
-            m_mqtt.publish("homeassistant/sensor/hydrosense/water_level_percent/config", config.c_str());
-            
-            // Konfiguracja czujnika rezerwy
-            config = createReserveSensorConfig();
-            m_mqtt.publish("homeassistant/binary_sensor/hydrosense/reserve/config", config.c_str());
+    bool publishHAConfig() {
+        if (!m_mqtt.isConnected()) {
+            Serial.println("Próba publikacji bez połączenia MQTT!");
+            return false;
         }
+        
+        String config;
+        
+        // Debugowanie połączenia
+        Serial.println("Status MQTT przed publikacją: " + String(m_mqtt.isConnected() ? "Połączony" : "Rozłączony"));
+        
+        // Konfiguracja czujnika poziomu wody
+        config = createSensorConfig("water_level", "Water Level", "mm");
+        Serial.println("Próba publikacji water_level config...");
+        Serial.println("Temat: homeassistant/sensor/hydrosense/water_level/config");
+        Serial.println("Zawartość: " + config);
+        
+        if (!m_mqtt.publish("homeassistant/sensor/hydrosense/water_level/config", config.c_str())) {
+            Serial.println("Błąd publikacji konfiguracji water_level");
+            return false;
+        }
+        Serial.println("Opublikowano water_level config");
+        delay(100);  // Zwiększamy opóźnienie
+        
+        // Konfiguracja czujnika procentowego
+        config = createSensorConfig("water_level_percent", "Water Level Percentage", "%");
+        Serial.println("Próba publikacji water_level_percent config...");
+        if (!m_mqtt.publish("homeassistant/sensor/hydrosense/water_level_percent/config", config.c_str())) {
+            Serial.println("Błąd publikacji konfiguracji water_level_percent");
+            return false;
+        }
+        Serial.println("Opublikowano water_level_percent config");
+        delay(100);
+        
+        // Konfiguracja czujnika rezerwy
+        config = createReserveSensorConfig();
+        Serial.println("Próba publikacji reserve config...");
+        if (!m_mqtt.publish("homeassistant/binary_sensor/hydrosense/reserve/config", config.c_str())) {
+            Serial.println("Błąd publikacji konfiguracji reserve");
+            return false;
+        }
+        Serial.println("Opublikowano reserve config");
+        
+        return true;
     }
 
     void update() {
@@ -453,21 +563,32 @@ public:
 
     void checkWiFiConnection() {
         if (WiFi.status() != WL_CONNECTED) {
-            Serial.println("WiFi rozłączone, próba ponownego połączenia...");
-            WiFi.disconnect();
-            delay(100);
-            WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+            static uint8_t reconnectAttempts = 0;
             
-            int attempts = 0;
-            while (WiFi.status() != WL_CONNECTED && attempts < 10) {
+            if (reconnectAttempts < 3) { // Limit prób ponownego połączenia
+                Serial.println("Ponowne łączenie z WiFi...");
+                
+                WiFi.disconnect(true);
                 delay(100);
-                yield();
-                attempts++;
-            }
-            
-            if (WiFi.status() == WL_CONNECTED) {
-                Serial.printf("Ponownie połączono z WiFi, IP: %s\n", 
-                            WiFi.localIP().toString().c_str());
+                ESP.wdtFeed();
+                
+                WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+                
+                uint8_t timeout = 0;
+                while (WiFi.status() != WL_CONNECTED && timeout < 10) {
+                    delay(300);
+                    timeout++;
+                    ESP.wdtFeed();
+                }
+                
+                reconnectAttempts++;
+            } else {
+                // Reset licznika po pewnym czasie
+                static unsigned long lastResetTime = 0;
+                if (millis() - lastResetTime > 60000) { // 1 minuta
+                    reconnectAttempts = 0;
+                    lastResetTime = millis();
+                }
             }
         }
     }
