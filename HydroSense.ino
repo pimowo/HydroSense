@@ -687,31 +687,6 @@ public:
             Serial.println("Zaktualizowano dane w HA");
         }
     }
-
-    String createSensorConfig(const char* id, const char* name, const char* unit) {
-        String config = "{";
-        config += "\"name\":\"" + String(name) + "\",";
-        config += "\"device_class\":\"" + String(id) + "\",";
-        config += "\"state_topic\":\"hydrosense/" + String(id) + "/state\",";
-        config += "\"unit_of_measurement\":\"" + String(unit) + "\",";
-        config += "\"unique_id\":\"hydrosense_" + m_deviceId + "_" + String(id) + "\",";
-        config += "\"device\":{";
-        config += "\"identifiers\":[\"hydrosense_" + m_deviceId + "\"],";
-        config += "\"name\":\"HydroSense\",";
-        config += "\"model\":\"HS ESP8266\",";
-        config += "\"manufacturer\":\"PMW\"";
-        config += "}}";
-        return config;
-    }
-
-    float calculateWaterPercentage(float waterLevel) {
-        float maxLevel = m_settings.getEmptyDistance() - m_settings.getFullDistance();
-        if (maxLevel <= 0) return 0.0f;
-        
-        float currentLevel = m_settings.getEmptyDistance() - waterLevel;
-        float percentage = (currentLevel / maxLevel) * 100.0f;
-        return constrain(percentage, 0.0f, 100.0f);
-    }
 };
 
 } // namespace HydroSense
