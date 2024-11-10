@@ -175,7 +175,7 @@ private:
     uint32_t m_pumpWork;     // seconds
 
     // States
-    bool m_soundEnabled;
+    bool m_soundEnabled = true;
     bool m_reserveState;     // Zmieniliśmy nazwę zmiennej z isInReserve na m_reserveState
 
 public:
@@ -418,6 +418,47 @@ private:
         return constrain(percentage, 0.0f, 100.0f);
     }
 
+    void handleButton() {
+        static unsigned long pressStartTime = 0;
+        static bool wasPressed = false;
+        static bool serviceMode = false;
+        static bool longPressActionExecuted = false;
+        
+        bool isPressed = (digitalRead(PIN_BUTTON) == LOW);
+        
+        if (isPressed && !wasPressed) {
+            pressStartTime = millis();
+            wasPressed = true;
+            longPressActionExecuted = false;
+        }
+        else if (isPressed && wasPressed) {
+            if (!longPressActionExecuted && (millis() - pressStartTime >= 1000)) {
+                Serial.println("Wykonuję kasowanie alarmu...");
+                digitalWrite(PIN_BUZZER, LOW);
+                // Sygnał dźwiękowy: dwa krótkie piknięcia
+                tone(PIN_BUZZER, 2000, 100);
+                delay(150);
+                tone(PIN_BUZZER, 2000, 100);
+                longPressActionExecuted = true;
+            }
+        }
+        else if (!isPressed && wasPressed) {
+            unsigned long pressDuration = millis() - pressStartTime;
+            wasPressed = false;
+            
+            if (!longPressActionExecuted && pressDuration < 1000) {
+                serviceMode = !serviceMode;
+                if (serviceMode) {
+                    Serial.println("Włączam tryb serwisowy");
+                    tone(PIN_BUZZER, 2000, 100);
+                } else {
+                    Serial.println("Wyłączam tryb serwisowy");
+                    tone(PIN_BUZZER, 1000, 100);
+                }
+            }
+        }
+    }
+
 public:
     HydroSenseApp() :
         deviceId(String(ESP.getChipId(), HEX)),
@@ -511,9 +552,11 @@ public:
     void resetAll() {
         Serial.println("Rozpoczynam pełny reset urządzenia...");
         
-        // Potwierdzenie dźwiękowe rozpoczęcia resetu
-        tone(PIN_BUZZER, 2000, 200);
-        delay(300);
+        // Sygnał dźwiękowy potwierdzający reset
+        tone(PIN_BUZZER, 2000, 500);
+        delay(600);
+        tone(PIN_BUZZER, 1000, 500);
+        delay(600);
         
         // Reset WiFiManager
         wm.resetSettings();
@@ -534,38 +577,50 @@ public:
     }
 
     void initializePins() {
+        // Najpierw inicjalizujemy Serial jeśli nie jest zainicjalizowany
+        if (!Serial) {
+            Serial.begin(115200);
+            delay(100); // Daj czas na inicjalizację
+        }
+
+        Serial.println("Inicjalizacja pinów...");
+        
+        // Inicjalizacja pinów
         pinMode(PIN_TRIG, OUTPUT);
         pinMode(PIN_ECHO, INPUT);
         pinMode(PIN_BUTTON, INPUT_PULLUP);
         pinMode(PIN_BUZZER, OUTPUT);
         digitalWrite(PIN_BUZZER, LOW);
         
-        // Sprawdzanie przycisku podczas startu
-        int buttonHoldTime = 0;
-        while (digitalRead(PIN_BUTTON) == LOW) { // Przycisk wciśnięty
-            delay(100);
-            buttonHoldTime += 100;
-            
-            // Po 1 sekundzie - pierwszy sygnał
-            if (buttonHoldTime == 1000) {
-                tone(PIN_BUZZER, 2000, 200);
+        // Dodajemy delay aby upewnić się, że piny są stabilne
+        delay(50);
+        
+        // Sprawdzenie stanu przycisku podczas startu
+        if (digitalRead(PIN_SENSOR) == LOW) {
+            Serial.println("Wykryto wciśnięty przycisk podczas startu!");
+            // Seria krótkich sygnałów ostrzegawczych
+            for(int i = 0; i < 3; i++) {
+                tone(PIN_BUZZER, 2000, 100);
+                delay(150);
             }
-            
-            // Po 3 sekundach - resetowanie
-            if (buttonHoldTime >= 3000) {
-                Serial.println("Wykryto długie przytrzymanie przycisku - rozpoczynam reset...");
-                resetAll();
-                return;
-            }
+            Serial.println("Rozpoczynam reset...");
+            delay(500);
+            resetAll();
+            return;
         }
+
+        Serial.println("Inicjalizacja zakończona");
     }
 
     void welcomeBuzzer() {
-        if (!settings.isSoundEnabled()) return;
-        
-        digitalWrite(PIN_BUZZER, HIGH);
-        delay(100);
-        digitalWrite(PIN_BUZZER, LOW);
+        if (!settings.isSoundEnabled()) return;        
+            // Prosta melodia powitalna
+            tone(PIN_BUZZER, 1397, 100);  // F6
+            delay(150);
+            tone(PIN_BUZZER, 1568, 100);  // G6
+            delay(150);
+            tone(PIN_BUZZER, 1760, 150);  // A6
+            delay(200);
     }
 
 void initializeWiFi() {
@@ -695,6 +750,9 @@ void initializeWiFi() {
         
         unsigned long currentTime = millis();
         
+        // Obsługa przycisku
+        handleButton();
+
         // Sprawdzanie WiFi
         if (currentTime - lastWiFiCheck >= WIFI_CHECK_INTERVAL) {
             checkWiFiConnection();
