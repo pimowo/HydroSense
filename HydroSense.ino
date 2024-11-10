@@ -235,12 +235,19 @@ public:
 // Główna klasa aplikacji
 class HydroSenseApp {
 private:
-    WiFiManager wm; // Dodajemy obiekt WiFiManager
-    WiFiManagerParameter mqtt_server;
-    WiFiManagerParameter mqtt_port;
-    WiFiManagerParameter mqtt_user;
-    WiFiManagerParameter mqtt_pass;
-
+    // Zmienne dla konfiguracji MQTT
+    char mqtt_broker[40];
+    char mqtt_user[40];
+    char mqtt_password[40];
+    uint16_t mqtt_port;
+    
+    // WiFiManager
+    WiFiManager wm;
+    
+    // Stałe czasowe
+    static constexpr unsigned long WIFI_CHECK_INTERVAL = 30000;  // ms
+    static constexpr unsigned long UPDATE_INTERVAL = 1000;       // ms
+    
     // Komponenty sieciowe
     WiFiClient m_wifiClient;
     String m_deviceId;
@@ -249,6 +256,7 @@ private:
     ESP8266WebServer m_webServer;
     unsigned long m_lastWiFiCheck;
     unsigned long m_lastMqttRetry;
+    unsigned long m_lastUpdateTime;
 
     // Sensory HA
     HASensor m_haWaterLevelSensor;
@@ -259,7 +267,32 @@ private:
     Settings m_settings;
     WaterLevelSensor m_levelSensor;
     PumpController m_pumpController;
-    unsigned long m_lastUpdateTime;
+
+    // Przeniesienie metod pomocniczych do klasy
+    String createSensorConfig(const char* id, const char* name, const char* unit) {
+        String config = "{";
+        config += "\"name\":\"" + String(name) + "\",";
+        config += "\"device_class\":\"" + String(id) + "\",";
+        config += "\"state_topic\":\"hydrosense/" + String(id) + "/state\",";
+        config += "\"unit_of_measurement\":\"" + String(unit) + "\",";
+        config += "\"unique_id\":\"hydrosense_" + m_deviceId + "_" + String(id) + "\",";
+        config += "\"device\":{";
+        config += "\"identifiers\":[\"hydrosense_" + m_deviceId + "\"],";
+        config += "\"name\":\"HydroSense\",";
+        config += "\"model\":\"HS ESP8266\",";
+        config += "\"manufacturer\":\"PMW\"";
+        config += "}}";
+        return config;
+    }
+
+    float calculateWaterPercentage(float waterLevel) {
+        float maxLevel = m_settings.getEmptyDistance() - m_settings.getFullDistance();
+        if (maxLevel <= 0) return 0.0f;
+        
+        float currentLevel = m_settings.getEmptyDistance() - waterLevel;
+        float percentage = (currentLevel / maxLevel) * 100.0f;
+        return constrain(percentage, 0.0f, 100.0f);
+    }
 
 public:
     HydroSenseApp() :
@@ -274,6 +307,12 @@ public:
         m_lastMqttRetry(0),
         m_lastUpdateTime(0)
     {
+        // Ustaw domyślne wartości MQTT
+        strcpy(mqtt_broker, "192.168.1.14");
+        strcpy(mqtt_user, "hydrosense");
+        strcpy(mqtt_password, "hydrosense");
+        mqtt_port = 1883;
+        
         Serial.println("\n=== HydroSense - Inicjalizacja ===");
         
         m_settings.load();
@@ -288,6 +327,42 @@ public:
         initializeOTA();
         
         Serial.println("=== Inicjalizacja zakończona ===\n");
+    }
+
+    bool connectMQTT() {
+        if (!WiFi.isConnected()) {
+            Serial.println("Brak połączenia WiFi - nie można połączyć z MQTT");
+            return false;
+        }
+
+        if (!m_mqtt.isConnected()) {
+            Serial.printf("Łączenie z MQTT (%s:%d)...", mqtt_broker, mqtt_port);
+            
+            m_mqtt.disconnect();
+            delay(100);
+            
+            if (m_mqtt.begin(mqtt_broker, mqtt_port, mqtt_user, mqtt_password)) {
+                Serial.println("Połączono!");
+                delay(500);
+                
+                Serial.printf("Stan połączenia MQTT po begin(): %s\n", 
+                            m_mqtt.isConnected() ? "Połączony" : "Rozłączony");
+                
+                if (m_mqtt.publish("hydrosense/test", "test")) {
+                    Serial.println("Test publikacji udany");
+                    
+                    if (publishHAConfig()) {
+                        Serial.println("Konfiguracja HA opublikowana pomyślnie");
+                        return true;
+                    }
+                }
+                Serial.println("Błąd publikacji");
+                return false;
+            }
+            Serial.println("Błąd połączenia!");
+            return false;
+        }
+        return true;
     }
 
     void initializePins() {
@@ -312,46 +387,56 @@ public:
         digitalWrite(PIN_BUZZER, LOW);
     }
 
-void initializeWiFi() {
-    // Parametry dla MQTT
-    WiFiManagerParameter mqtt_server("mqtt_server", "MQTT Server", MQTT_BROKER, 40);
-    WiFiManagerParameter mqtt_port("mqtt_port", "MQTT Port", "1883", 6);
-    WiFiManagerParameter mqtt_user("mqtt_user", "MQTT User", MQTT_USER, 40);
-    WiFiManagerParameter mqtt_pass("mqtt_pass", "MQTT Password", MQTT_PASSWORD, 40);
-    
-    // Dodaj parametry do WiFiManager
-    wm.addParameter(&mqtt_server);
-    wm.addParameter(&mqtt_port);
-    wm.addParameter(&mqtt_user);
-    wm.addParameter(&mqtt_pass);
-    
-    // Skonfiguruj zachowanie WiFiManager
-    wm.setConfigPortalTimeout(180); // 3 minuty timeout
-    wm.setConnectTimeout(30); // 30 sekund na połączenie
-    wm.setDebugOutput(true);
-    
-    // Własny nagłówek portalu
-    wm.setTitle("HydroSense Setup");
-    
-    // Próba automatycznego połączenia
-    if(!wm.autoConnect("HydroSense-Setup")) {
-        Serial.println("Błąd połączenia! Reset...");
-        ESP.restart();
-    }
-    
-    // Jeśli połączono, zapisz parametry MQTT
-    if(WiFi.status() == WL_CONNECTED) {
-        Serial.println("Połączono z WiFi!");
+    void initializeWiFi() {
+        Serial.println("\nKonfiguracja WiFi...");
         
-        // Zapisz parametry MQTT
-        strcpy(MQTT_BROKER, mqtt_server.getValue());
-        MQTT_PORT = atoi(mqtt_port.getValue());
-        strcpy(MQTT_USER, mqtt_user.getValue());
-        strcpy(MQTT_PASSWORD, mqtt_pass.getValue());
+        // Parametry dla MQTT
+        WiFiManagerParameter custom_mqtt_server("server", "MQTT Server", mqtt_broker, 40);
+        WiFiManagerParameter custom_mqtt_port("port", "MQTT Port", String(mqtt_port).c_str(), 6);
+        WiFiManagerParameter custom_mqtt_user("user", "MQTT User", mqtt_user, 40);
+        WiFiManagerParameter custom_mqtt_pass("pass", "MQTT Password", mqtt_password, 40);
         
-        Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
+        // Dodaj parametry do WiFiManager
+        wm.addParameter(&custom_mqtt_server);
+        wm.addParameter(&custom_mqtt_port);
+        wm.addParameter(&custom_mqtt_user);
+        wm.addParameter(&custom_mqtt_pass);
+        
+        // Skonfiguruj zachowanie WiFiManager
+        wm.setConfigPortalTimeout(180);
+        wm.setConnectTimeout(30);
+        wm.setDebugOutput(true);
+        
+        // Własny nagłówek portalu
+        wm.setTitle("HydroSense Setup");
+        
+        // Próba automatycznego połączenia
+        if(!wm.autoConnect("HydroSense-Setup")) {
+            Serial.println("Błąd połączenia! Reset...");
+            ESP.restart();
+        }
+        
+        // Jeśli połączono, zapisz parametry MQTT
+        if(WiFi.status() == WL_CONNECTED) {
+            Serial.println("Połączono z WiFi!");
+            
+            // Zapisz parametry MQTT - użyj strncpy zamiast strcpy dla bezpieczeństwa
+            strncpy(mqtt_broker, custom_mqtt_server.getValue(), 39);
+            mqtt_broker[39] = '\0';  // Upewnij się że string jest zakończony
+            
+            mqtt_port = atoi(custom_mqtt_port.getValue());
+            
+            strncpy(mqtt_user, custom_mqtt_user.getValue(), 39);
+            mqtt_user[39] = '\0';
+            
+            strncpy(mqtt_password, custom_mqtt_pass.getValue(), 39);
+            mqtt_password[39] = '\0';
+            
+            Serial.printf("IP: %s\n", WiFi.localIP().toString().c_str());
+            Serial.printf("MQTT Server: %s\n", mqtt_broker);
+            Serial.printf("MQTT Port: %d\n", mqtt_port);
+        }
     }
-}
 
     void initializeHomeAssistant() {
         m_haWaterLevelSensor.setName("Water Level");
@@ -466,52 +551,6 @@ void initializeWiFi() {
         html += "</body></html>";
         
         m_webServer.send(200, "text/html", html);
-    }
-
-    bool connectMQTT() {
-        if (!WiFi.isConnected()) {
-            Serial.println("Brak połączenia WiFi - nie można połączyć z MQTT");
-            return false;
-        }
-
-        if (!m_mqtt.isConnected()) {
-            Serial.printf("Łączenie z MQTT (%s:%d)...", MQTT_BROKER, MQTT_PORT);
-            
-            // Rozłącz się najpierw, jeśli było poprzednie połączenie
-            m_mqtt.disconnect();
-            delay(100);
-            
-            // Próba połączenia z dodatkowym ID klienta
-            if (m_mqtt.begin(MQTT_BROKER, MQTT_PORT, MQTT_USER, MQTT_PASSWORD)) {
-                Serial.println("Połączono!");
-                delay(500);  // Dłuższy delay po połączeniu
-                
-                // Debugowanie stanu połączenia
-                Serial.printf("Stan połączenia MQTT po begin(): %s\n", 
-                            m_mqtt.isConnected() ? "Połączony" : "Rozłączony");
-                
-                // Spróbuj opublikować prosty test
-                if (m_mqtt.publish("hydrosense/test", "test")) {
-                    Serial.println("Test publikacji udany");
-                    
-                    // Teraz próbujemy opublikować konfigurację
-                    if (publishHAConfig()) {
-                        Serial.println("Konfiguracja HA opublikowana pomyślnie");
-                        return true;
-                    } else {
-                        Serial.println("Błąd publikacji konfiguracji HA");
-                        return false;
-                    }
-                } else {
-                    Serial.println("Test publikacji nieudany");
-                    return false;
-                }
-            } else {
-                Serial.println("Błąd połączenia!");
-                return false;
-            }
-        }
-        return true;
     }
 
     bool publishHAConfig() {
@@ -680,7 +719,7 @@ void initializeWiFi() {
 // Główna pętla programu
 void setup() {
     Serial.begin(115200);
-    while (!Serial) delay(10);  // czekaj na port szeregowy
+    while (!Serial) delay(10);
     
     static HydroSense::HydroSenseApp app;
     
