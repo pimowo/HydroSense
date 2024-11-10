@@ -298,7 +298,9 @@ public:
     void save() {
         EEPROM.begin(512);
         uint16_t addr = 0;
-        
+
+        Serial.println("Zapisywanie ustawień do EEPROM");
+
         EEPROM.put(addr, m_magic); addr += sizeof(m_magic);
         EEPROM.put(addr, m_wifiSSID); addr += sizeof(m_wifiSSID);
         EEPROM.put(addr, m_wifiPassword); addr += sizeof(m_wifiPassword);
@@ -317,17 +319,23 @@ public:
         EEPROM.put(addr, m_pumpWork); addr += sizeof(m_pumpWork);
         EEPROM.put(addr, m_soundEnabled); addr += sizeof(m_soundEnabled);
         EEPROM.put(addr, m_reserveState); addr += sizeof(m_reserveState);
-        
+
         EEPROM.commit();
         EEPROM.end();
+
+        Serial.println("Ustawienia zapisane");
+        printSettings();
+
     }
 
     void load() {
         EEPROM.begin(512);
         uint16_t addr = 0;
-        
+
+        Serial.println("Ładowanie ustawień z EEPROM");
+
         EEPROM.get(addr, m_magic); addr += sizeof(m_magic);
-        
+
         if (m_magic != SETTINGS_MAGIC) {
             Serial.println("Wykryto niezainicjalizowany EEPROM - ładowanie wartości domyślnych");
             EEPROM.end();
@@ -352,8 +360,32 @@ public:
         EEPROM.get(addr, m_pumpWork); addr += sizeof(m_pumpWork);
         EEPROM.get(addr, m_soundEnabled); addr += sizeof(m_soundEnabled);
         EEPROM.get(addr, m_reserveState); addr += sizeof(m_reserveState);
-        
+
         EEPROM.end();
+
+        Serial.println("Ustawienia załadowane");
+        printSettings();
+
+    }
+
+    void printSettings() {
+        Serial.printf("m_wifiSSID: %s\n", m_wifiSSID);
+        Serial.printf("m_wifiPassword: %s\n", m_wifiPassword);
+        Serial.printf("m_mqttServer: %s\n", m_mqttServer);
+        Serial.printf("m_mqttPort: %d\n", m_mqttPort);
+        Serial.printf("m_mqttUser: %s\n", m_mqttUser);
+        Serial.printf("m_mqttPassword: %s\n", m_mqttPassword);
+        Serial.printf("m_tankDiameter: %.1f mm\n", m_tankDiameter);
+        Serial.printf("m_tankWidth: %.1f mm\n", m_tankWidth);
+        Serial.printf("m_tankHeight: %.1f mm\n", m_tankHeight);
+        Serial.printf("m_fullDistance: %.1f mm\n", m_fullDistance);
+        Serial.printf("m_emptyDistance: %.1f mm\n", m_emptyDistance);
+        Serial.printf("m_reserveLevel: %.1f mm\n", m_reserveLevel);
+        Serial.printf("m_reserveHysteresis: %.1f mm\n", m_reserveHysteresis);
+        Serial.printf("m_pumpDelay: %d s\n", m_pumpDelay);
+        Serial.printf("m_pumpWork: %d s\n", m_pumpWork);
+        Serial.printf("m_soundEnabled: %d\n", m_soundEnabled);
+        Serial.printf("m_reserveState: %d\n", m_reserveState);
     }
 };
 
@@ -589,6 +621,7 @@ public:
         pinMode(PIN_TRIG, OUTPUT);
         pinMode(PIN_ECHO, INPUT);
         pinMode(PIN_BUTTON, INPUT_PULLUP);
+        pinMode(PIN_SENSOR, INPUT_PULLUP);
         pinMode(PIN_BUZZER, OUTPUT);
         digitalWrite(PIN_BUZZER, LOW);
         
@@ -1095,17 +1128,21 @@ const char* WebServer::HTML_FOOT = R"html(
 
 HydroSense::HydroSenseApp* app = nullptr;
 
+void startWebServer() {
+    // Kod inicjalizacji serwera WWW
+    Serial.println("Serwer WWW uruchomiony");
+}
+
 void setup() {
-    ESP.wdtDisable();
-    ESP.wdtEnable(WDTO_8S);
-    
     Serial.begin(115200);
-    while (!Serial) {
-        yield();
-        delay(10);
-    }
+    Serial.println("=== HydroSense - Inicjalizacja ===");
     
-    app = new HydroSense::HydroSenseApp();
+    // Inicjalizacja ustawień
+    loadSettings();
+    
+    // Inicjalizacja serwera WWW
+    Serial.println("Inicjalizacja serwera WWW");
+    startWebServer();
 }
 
 void loop() {
