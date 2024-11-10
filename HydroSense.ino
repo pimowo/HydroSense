@@ -12,6 +12,7 @@
 #include <ESP8266WebServer.h>
 #include <CRC32.h>
 #include <WiFiManager.h>
+#include <ArduinoJson.h>
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -270,8 +271,6 @@ private:
 
     // Przeniesienie metod pomocniczych do klasy
     String createSensorConfig(const char* id, const char* name, const char* unit) {
-        constexpr size_t BUFFER_SIZE = 512;
-        StaticJsonDocument<BUFFER_SIZE> doc;
         String config = "{";
         config += "\"name\":\"" + String(name) + "\",";
         config += "\"device_class\":\"" + String(id) + "\",";
@@ -341,12 +340,12 @@ public:
             Serial.printf("Łączenie z MQTT (%s:%d)...", mqtt_broker, mqtt_port);
             
             m_mqtt.disconnect();
-            delay(500); // Zwiększ opóźnienie
+            delay(500);
             
-            for (int i = 0; i < 3; i++) { // Dodaj retry
+            for (int i = 0; i < 3; i++) {
                 if (m_mqtt.begin(mqtt_broker, mqtt_port, mqtt_user, mqtt_password)) {
                     Serial.println("Połączono!");
-                    delay(1000); // Daj więcej czasu na stabilizację połączenia
+                    delay(1000);
                     
                     if (m_mqtt.isConnected()) {
                         if (publishHAConfig()) {
@@ -360,10 +359,6 @@ public:
             return false;
         }
         return true;
-
-        m_mqtt.onDisconnect([this](AsyncMqttClientDisconnectReason reason) {
-            Serial.println("Rozłączono z MQTT");
-        });
     }
 
     void initializePins() {
@@ -551,6 +546,9 @@ public:
     }
 
     void handleRoot() {
+        float waterLevel = m_levelSensor.measureDistance();
+        float percentage = calculateWaterPercentage(waterLevel);
+        
         static char buffer[1024];
         snprintf(buffer, sizeof(buffer),
             "<html><body>"
