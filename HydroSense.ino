@@ -975,10 +975,7 @@ void initializeWiFi() {
 };
 
 class WebServer {
-private:
-    ESP8266WebServer server;
-    Settings& settings;
-    
+private:   
     // HTML templates
     static const char* HTML_HEAD;
     static const char* HTML_FOOT;
@@ -1134,12 +1131,11 @@ const char* WebServer::HTML_FOOT = R"html(
 } // namespace HydroSense
 
 // Deklaracja zmiennych globalnych
-HydroSense::Settings settings;
 HydroSense::HydroSenseApp* app = nullptr;
 HydroSense::WebServer* webServer = nullptr;
 
 void startWebServer() {
-    static HydroSense::WebServer webServerInstance(settings);
+    static HydroSense::WebServer webServerInstance;
     webServer = &webServerInstance;
     webServer->begin();
     Serial.println("Serwer WWW uruchomiony");
@@ -1149,7 +1145,7 @@ void setup() {
     Serial.begin(115200);
     Serial.println("");
     Serial.println("=== HydroSense - Inicjalizacja ===");
-    
+
     // Inicjalizacja serwera WWW
     Serial.println("Inicjalizacja serwera WWW");
     startWebServer();
