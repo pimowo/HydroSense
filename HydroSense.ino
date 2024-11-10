@@ -205,7 +205,29 @@ public:
 
     // Konstruktor z wartościami domyślnymi
     Settings() {
-        // wartości domyślne są już zainicjalizowane przy deklaracji zmiennych
+        // Domyślne wartości dla zbiornika
+        m_tankDiameter = 315.0f;     // Średnica zbiornika w mm
+        m_fullDistance = 50.0f;      // Odległość czujnika od lustra wody przy pełnym zbiorniku
+        m_emptyDistance = 300.0f;    // Odległość czujnika od dna pustego zbiornika
+        m_reserveThreshold = 250.0f; // Próg alarmu rezerwy
+        m_reserveHysteresis = 20.0f; // Histereza dla stanu rezerwy
+        m_soundEnabled = true;       // Domyślnie włączamy dźwięk
+        m_isInReserve = false;       // Początkowy stan rezerwy
+        
+        // Zapisujemy wartości domyślne do EEPROM
+        save();
+        
+        // Weryfikacja zapisu
+        load();
+        
+        // Log wartości po inicjalizacji
+        Serial.println("Zainicjalizowano domyślne wartości:");
+        Serial.printf("- Średnica zbiornika: %.1f mm\n", m_tankDiameter);
+        Serial.printf("- Wysokość pełna: %.1f mm\n", m_fullDistance);
+        Serial.printf("- Wysokość pusta: %.1f mm\n", m_emptyDistance);
+        Serial.printf("- Próg rezerwy: %.1f mm\n", m_reserveThreshold);
+        Serial.printf("- Histereza rezerwy: %.1f mm\n", m_reserveHysteresis);
+        Serial.printf("- Dźwięk włączony: %s\n", m_soundEnabled ? "Tak" : "Nie");
     }
 };
 
@@ -289,62 +311,58 @@ public:
 
     void initializeWiFi() {
         Serial.println("\nKonfiguracja WiFi...");
-        Serial.printf("Próba połączenia z siecią: %s\n", WIFI_SSID);
         
-        // Reset konfiguracji WiFi
-        WiFi.disconnect(true);
-        WiFi.softAPdisconnect(true);
-        delay(200);
-        
-        // Podstawowa konfiguracja
+        // Pełne czyszczenie pamięci WiFi
         WiFi.persistent(false);
+        WiFi.disconnect(true);
+        WiFi.mode(WIFI_OFF);
+        delay(100);
+        
+        // Wyłącz zapisywanie konfiguracji do flash
+        ESP.eraseConfig();
+        delay(100);
+        
+        // Ustaw tryb i podstawową konfigurację
         WiFi.mode(WIFI_STA);
+        WiFi.setAutoReconnect(true);
+        WiFi.persistent(true);
+        delay(100);
         
-        // Wyłącz oszczędzanie energii
-        WiFi.setSleepMode(WIFI_NONE_SLEEP);
-        wifi_set_sleep_type(NONE_SLEEP_T);
-        
-        delay(200);
-        
-        // Rozpocznij połączenie
-        Serial.printf("Siła sygnału przed połączeniem: %d dBm\n", WiFi.RSSI());
+        // Próba połączenia
+        Serial.printf("Łączenie z %s \n", WIFI_SSID);
         WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
         
-        // Prosta pętla z timeoutem i więcej informacji diagnostycznych
-        uint8_t timeout = 0;
-        while (WiFi.status() != WL_CONNECTED && timeout < 20) {
+        int attempts = 0;
+        while (WiFi.status() != WL_CONNECTED && attempts < 20) {
             delay(500);
-            timeout++;
+            Serial.print(".");
+            attempts++;
             
-            if (timeout % 5 == 0) {
-                Serial.printf("\nPróba %d/20: ", timeout);
-                switch (WiFi.status()) {
-                    case WL_IDLE_STATUS: Serial.println("Idle"); break;
-                    case WL_NO_SSID_AVAIL: Serial.println("Nie znaleziono sieci"); break;
-                    case WL_SCAN_COMPLETED: Serial.println("Skanowanie zakończone"); break;
-                    case WL_CONNECT_FAILED: Serial.println("Połączenie nieudane"); break;
-                    case WL_CONNECTION_LOST: Serial.println("Utracono połączenie"); break;
-                    case WL_DISCONNECTED: Serial.println("Rozłączono"); break;
-                    default: Serial.printf("Status: %d\n", WiFi.status()); break;
+            if (attempts % 5 == 0) {
+                // Status co 5 prób
+                Serial.printf("\nPróba %d/20 - Status: %d, RSSI: %d dBm\n", 
+                    attempts, WiFi.status(), WiFi.RSSI());
+                
+                // Restart ESP jeśli status = 7
+                if (WiFi.status() == WL_CONNECT_FAILED) {
+                    Serial.println("Restart ESP...");
+                    ESP.restart();
                 }
-                Serial.printf("RSSI: %d dBm\n", WiFi.RSSI());
-            } else {
-                Serial.print(".");
             }
             ESP.wdtFeed();
         }
         Serial.println();
         
         if (WiFi.status() == WL_CONNECTED) {
-            Serial.printf("Połączono! \nIP: %s\nRSSI: %d dBm\nBSSID: %s\nKanał: %d\n", 
+            Serial.printf("Połączono! IP: %s, RSSI: %d dBm\n", 
                 WiFi.localIP().toString().c_str(),
-                WiFi.RSSI(),
-                WiFi.BSSIDstr().c_str(),
-                WiFi.channel()
+                WiFi.RSSI()
             );
+            
+            // Zapisz udaną konfigurację
+            WiFi.persistent(true);
         } else {
-            Serial.println("Nie udało się połączyć.");
-            Serial.printf("Ostatni status: %d\n", WiFi.status());
+            Serial.printf("Błąd połączenia. Status: %d\n", WiFi.status());
         }
     }
 
