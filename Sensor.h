@@ -1,7 +1,7 @@
-// Sensor.h
-#pragma once
+// Sensors.h
+#ifndef SENSORS_H
+#define SENSORS_H
 
-int measureDistance();
-int calculateWaterLevel(int distance);
-float getCurrentWaterLevel();
-void updateWaterLevel();
+float measureDistance();
+
+#endif

@@ -5,7 +5,6 @@
 #include <ESP8266WiFi.h>
 #include "ConfigManager.h"
 #include "SystemStatus.h"
-#include "Constants.h"
 
 class NetworkManager {
     ConfigManager& configManager;
@@ -15,6 +14,7 @@ class NetworkManager {
 
 public:
     NetworkManager(ConfigManager& config, SystemStatus& status);
+    void setupAP();  // Dodana deklaracja
     void checkWiFiConnection();
     bool isConnected() const;
     String getLocalIP() const;
