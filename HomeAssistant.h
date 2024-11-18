@@ -9,7 +9,6 @@ void setupHA();
 void firstUpdateHA();
 void onServiceSwitchCommand(bool state, HASwitch* sender);
 void onSoundSwitchCommand(bool state, HASwitch* sender);
-void onPumpAlarmCommand(bool state, HASwitch* sender);
 
 // Deklaracje zewnętrzne
 extern HADevice device;
@@ -23,6 +22,5 @@ extern HASensor sensorAlarm;
 extern HASensor sensorReserve;
 extern HASwitch switchService;
 extern HASwitch switchSound;
-extern HASwitch switchPumpAlarm;
 
 #endif

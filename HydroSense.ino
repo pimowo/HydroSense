@@ -9,18 +9,20 @@
 #include <LittleFS.h>
 #include <ArduinoJson.h>
 
+// Własne pliki nagłówkowe
+#include "Pins.h"
+#include "SystemStatus.h"
+#include "Config.h"
 #include "Alarm.h"
 #include "Button.h"
-#include "Config.h"
-#include "ConfigManager.h"
 #include "HomeAssistant.h"
+
+#include "ConfigManager.h"
 #include "Network.h"
 #include "Pump.h"
 #include "Sensor.h"
 #include "Status.h"
-#include "SystemStatus.h"
 #include "WebServer.h"
-#include "Pins.h"
 
 NetworkManager networkManager(configManager, systemStatus);
 WebServerManager webServerManager(configManager);

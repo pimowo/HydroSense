@@ -2,8 +2,9 @@
 #define BUTTON_H
 
 #include <Arduino.h>
+#include "Pins.h"
 #include "SystemStatus.h"
-#include "HomeAssistant.h"
+#include "Alarm.h"
 
 struct ButtonState {
     unsigned long pressedTime = 0;
@@ -16,7 +17,6 @@ extern ButtonState buttonState;
 void handleButton();
 void setupPin();
 
-// Definicje stałych
 const unsigned long DEBOUNCE_DELAY = 50;
 const unsigned long LONG_PRESS_TIME = 1000;
 

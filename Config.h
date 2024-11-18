@@ -1,5 +1,14 @@
-// Config.h
-#pragma once
+#ifndef CONFIG_H
+#define CONFIG_H
+
+#include <Arduino.h>
+
+struct Config {
+    bool soundEnabled = true;  // Domyślnie dźwięk włączony
+    // Dodaj inne ustawienia konfiguracyjne tutaj
+};
+
+extern Config config;
 
 struct SystemStatus {
   // Stan urządzenia
@@ -67,3 +76,5 @@ struct Status {
   unsigned long lastSoundAlert;
 };
 Status status;
+
+#endif
