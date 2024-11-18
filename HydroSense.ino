@@ -9,6 +9,9 @@
 
 // --- Definicje stałych i zmiennych globalnych
 
+// Wersja systemu
+const char* SOFTWARE_VERSION = "18.11.24";
+
 // Konfiguracja MQTT
 const char* MQTT_SERVER = "192.168.1.14";          // Adres IP serwera MQTT (Home Assistant)
 const char* MQTT_USER = "hydrosense";              // Użytkownik MQTT
@@ -476,7 +479,7 @@ void setupHA() {
     device.setName("HydroSense");                  // Nazwa urządzenia
     device.setModel("HS ESP8266");                 // Model urządzenia
     device.setManufacturer("PMW");                 // Producent
-    device.setSoftwareVersion("18.11.24");         // Wersja oprogramowania
+    device.setSoftwareVersion(SOFTWARE_VERSION);         // Wersja oprogramowania
 
     // Konfiguracja sensorów pomiarowych w HA
     sensorDistance.setName("Pomiar odległości");
