@@ -28,8 +28,8 @@ const unsigned long ULTRASONIC_TIMEOUT = 50;       // Timeout pomiaru czujnika u
 const unsigned long MEASUREMENT_INTERVAL = 60000;  // Interwał między pomiarami
 const unsigned long WIFI_CHECK_INTERVAL = 5000;    // Interwał sprawdzania połączenia WiFi
 const unsigned long WATCHDOG_TIMEOUT = 8000;       // Timeout dla watchdoga
-const unsigned long PUMP_MAX_WORK_TIME = 300000;   // Maksymalny czas pracy pompy (5 minut)
-const unsigned long PUMP_DELAY_TIME = 60000;       // Opóźnienie ponownego załączenia pompy (1 minuta)
+//const unsigned long PUMP_MAX_WORK_TIME = 300000;   // Maksymalny czas pracy pompy (5 minut)
+//const unsigned long PUMP_DELAY_TIME = 60000;       // Opóźnienie ponownego załączenia pompy (1 minuta)
 const unsigned long SENSOR_READ_INTERVAL = 5000;   // Częstotliwość odczytu czujnika
 const unsigned long MQTT_RETRY_INTERVAL = 5000;    // Interwał prób połączenia MQTT
 const unsigned long WIFI_RETRY_INTERVAL = 10000;   // Interwał prób połączenia WiFi
@@ -336,7 +336,7 @@ void updatePump() {
     }
 
     // --- ZABEZPIECZENIE 2: Maksymalny czas pracy ---
-    if (status.isPumpActive && (currentMillis - status.pumpStartTime > PUMP_WORK_TIME * 1000)) {
+    if (status.isPumpActive && (currentMillis - status.pumpStartTime >= PUMP_WORK_TIME * 1000)) {
         stopPump();
         status.pumpSafetyLock = true;
         switchPumpAlarm.setState(true);
@@ -947,24 +947,78 @@ void setup() {
     }  
 }
 
+// void loop() {
+//     unsigned long currentMillis = millis();
+//     static unsigned long lastMQTTRetry = 0;
+//     static unsigned long lastMeasurement = 0;
+//     static unsigned long lastStatsUpdate = 0;
+
+//     // KRYTYCZNE OPERACJE SYSTEMOWE
+    
+//     // Zabezpieczenie przed zawieszeniem systemu
+//     ESP.wdtFeed();  // Resetowanie licznika watchdog
+//     yield();  // Obsługa krytycznych zadań systemowych ESP8266
+//     ArduinoOTA.handle();  // Nasłuchiwanie żądań aktualizacji OTA
+
+//     // ZARZĄDZANIE ŁĄCZNOŚCIĄ
+    
+//     // Zarządzanie połączeniem MQTT
+//     if (!mqtt.isConnected()) {
+//         if (currentMillis - lastMQTTRetry >= 10000) { // Ponowna próba co 10 sekund
+//             lastMQTTRetry = currentMillis;
+//             DEBUG_PRINT("\nBrak połączenia MQTT - próba reconnect...");
+//             if (mqtt.begin(MQTT_SERVER, 1883, MQTT_USER, MQTT_PASSWORD)) {
+//                 DEBUG_PRINT("MQTT połączono ponownie!");
+//             }
+//         }
+//     }
+        
+//     mqtt.loop();  // Obsługa komunikacji MQTT
+
+//     // GŁÓWNE FUNKCJE URZĄDZENIA
+    
+//     // Obsługa interfejsu i sterowania
+//     handleButton();     // Przetwarzanie sygnałów z przycisków
+//     updatePump();       // Sterowanie pompą
+//     checkAlarmConditions(); // System ostrzeżeń dźwiękowych
+//     handleMillisOverflow();  // Sprawdzenie przepełnienia licznika
+    
+//     // Monitoring poziomu wody
+//     if (currentMillis - lastMeasurement >= MEASUREMENT_INTERVAL) {
+//         updateWaterLevel();  // Pomiar i aktualizacja stanu wody
+//         lastMeasurement = currentMillis;
+//     }
+// }
+
 void loop() {
     unsigned long currentMillis = millis();
     static unsigned long lastMQTTRetry = 0;
     static unsigned long lastMeasurement = 0;
-    static unsigned long lastStatsUpdate = 0;
 
-    // KRYTYCZNE OPERACJE SYSTEMOWE
+    // 1. KRYTYCZNE OPERACJE CZASOWE
+    updatePump();  // Sterowanie pompą - przeniesione na początek jako priorytet
+    handleMillisOverflow();  // Sprawdzenie przepełnienia licznika
     
-    // Zabezpieczenie przed zawieszeniem systemu
+    // 2. PODSTAWOWE ZABEZPIECZENIA SYSTEMOWE
     ESP.wdtFeed();  // Resetowanie licznika watchdog
     yield();  // Obsługa krytycznych zadań systemowych ESP8266
+    
+    // 3. OBSŁUGA WEJŚĆ I ALARMÓW
+    handleButton();  // Przetwarzanie sygnałów z przycisków
+    checkAlarmConditions();  // System ostrzeżeń dźwiękowych
+    
+    // 4. POMIARY I AKTUALIZACJE (wykonywane z określonym interwałem)
+    if (currentMillis - lastMeasurement >= MEASUREMENT_INTERVAL) {
+        updateWaterLevel();  // Pomiar i aktualizacja stanu wody
+        lastMeasurement = currentMillis;
+    }
+    
+    // 5. KOMUNIKACJA (najmniej priorytetowa)
     ArduinoOTA.handle();  // Nasłuchiwanie żądań aktualizacji OTA
-
-    // ZARZĄDZANIE ŁĄCZNOŚCIĄ
     
     // Zarządzanie połączeniem MQTT
     if (!mqtt.isConnected()) {
-        if (currentMillis - lastMQTTRetry >= 10000) { // Ponowna próba co 10 sekund
+        if (currentMillis - lastMQTTRetry >= 10000) {
             lastMQTTRetry = currentMillis;
             DEBUG_PRINT("\nBrak połączenia MQTT - próba reconnect...");
             if (mqtt.begin(MQTT_SERVER, 1883, MQTT_USER, MQTT_PASSWORD)) {
@@ -972,20 +1026,5 @@ void loop() {
             }
         }
     }
-        
     mqtt.loop();  // Obsługa komunikacji MQTT
-
-    // GŁÓWNE FUNKCJE URZĄDZENIA
-    
-    // Obsługa interfejsu i sterowania
-    handleButton();     // Przetwarzanie sygnałów z przycisków
-    updatePump();       // Sterowanie pompą
-    checkAlarmConditions(); // System ostrzeżeń dźwiękowych
-    handleMillisOverflow();  // Sprawdzenie przepełnienia licznika
-    
-    // Monitoring poziomu wody
-    if (currentMillis - lastMeasurement >= MEASUREMENT_INTERVAL) {
-        updateWaterLevel();  // Pomiar i aktualizacja stanu wody
-        lastMeasurement = currentMillis;
-    }
 }
