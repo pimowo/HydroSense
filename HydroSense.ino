@@ -11,6 +11,7 @@
 #include "HomeAssistant.h"
 #include "Button.h"
 #include "Alarm.h"
+#include "GlobalDeclarations.h"
 
 // Global instances
 SystemStatus systemStatus;

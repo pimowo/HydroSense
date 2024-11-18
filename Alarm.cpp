@@ -1,5 +1,7 @@
 // Alarm.cpp
 #include "Alarm.h"
+#include "GlobalDeclarations.h"
+#include "ConfigManager.h"
 
 // Krótki sygnał dźwiękowy - pojedyncze piknięcie
 void playShortWarningSound() {

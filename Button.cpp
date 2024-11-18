@@ -1,6 +1,7 @@
 #include "Button.h"
 #include "Pins.h"
 #include <Arduino.h>
+#include "GlobalDeclarations.h"
 
 ButtonState buttonState;
 

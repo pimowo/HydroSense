@@ -1,4 +1,5 @@
 #include "Network.h"
+#include "Constants.h"
 
 NetworkManager::NetworkManager(ConfigManager& configManager, SystemStatus& systemStatus)
     : configManager(configManager), 

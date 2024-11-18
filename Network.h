@@ -7,7 +7,11 @@
 
 class NetworkManager {
 public:
-    NetworkManager(ConfigManager& config, SystemStatus& status);
+    NetworkManager(ConfigManager& config, SystemStatus& status) : 
+        configManager(config), 
+        systemStatus(status),
+        wifiInitiated(false) {}  // Add initialization
+
     bool setupWiFi();
     void setupAP();
     void checkWiFiConnection();
@@ -17,6 +21,7 @@ public:
 private:
     ConfigManager& configManager;
     SystemStatus& systemStatus;
+    bool wifiInitiated;  // Add missing member
     unsigned long lastWiFiCheck = 0;
 };
 

@@ -1,5 +1,7 @@
 #include "HomeAssistant.h"
 #include "Config.h"
+#include "GlobalDeclarations.h"
+#include "Constants.h"
 
 // Define the switches
 HASwitch switchService("service_mode");
