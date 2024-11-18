@@ -72,7 +72,17 @@ float lastReportedDistance = 0;
 unsigned long ostatniCzasDebounce = 0;  // Ostatni czas zmiany stanu przycisku
 unsigned long lastMeasurement = 0;
 const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
+
 // Stałe konfiguracyjne
+
+// eeprom
+struct Config {
+    uint8_t version;  // Wersja konfiguracji
+    bool soundEnabled;  // Status dźwięku (włączony/wyłączony)
+    char checksum;  // Suma kontrolna
+};
+Config config;
+
 const uint8_t CONFIG_VERSION = 1;        // Wersja konfiguracji
 const int EEPROM_SIZE = sizeof(Config);  // Rozmiar używanej pamięci EEPROM   
 
@@ -121,14 +131,6 @@ struct Status {
     unsigned long lastSuccessfulMeasurement;
 };
 Status status;
-
-// eeprom
-struct Config {
-    uint8_t version;  // Wersja konfiguracji
-    bool soundEnabled;  // Status dźwięku (włączony/wyłączony)
-    char checksum;  // Suma kontrolna
-};
-Config config;
 
 // Struktura dla obsługi przycisku
 struct ButtonState {
