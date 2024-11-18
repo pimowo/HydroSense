@@ -1,6 +1,9 @@
 #include "HomeAssistant.h"
-#include "Constants.h"
-#include "SystemStatus.h"
+#include "Config.h"
+
+// Define the switches
+HASwitch switchService("service_mode");
+HASwitch switchPumpAlarm("pump_alarm");
 
 // Funkcja konfigurująca Home Assistant
 void setupHA() {

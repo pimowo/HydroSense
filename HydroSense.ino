@@ -2,39 +2,39 @@
 
 #include <Arduino.h>      // Podstawowa biblioteka Arduino zawierająca funkcje rdzenia
 #include <ArduinoHA.h>    // Integracja z Home Assistant przez protokół MQTT
-#include <ArduinoOTA.h>   // Aktualizacja oprogramowania przez sieć WiFi (Over-The-Air)
+//#include <ArduinoOTA.h>   // Aktualizacja oprogramowania przez sieć WiFi (Over-The-Air)
 #include <ESP8266WiFi.h>  // Biblioteka WiFi dedykowana dla układu ESP8266
 #include <ESP8266WebServer.h>
-#include <DNSServer.h>
-#include <LittleFS.h>
-#include <ArduinoJson.h>
+//#include <DNSServer.h>
+//#include <LittleFS.h>
+//#include <ArduinoJson.h>
 
 // Własne pliki nagłówkowe
-#include "Pins.h"
 #include "SystemStatus.h"
-#include "Config.h"
 #include "Constants.h"
-#include "Alarm.h"
+#include "Pins.h"
+#include "Config.h"
 #include "Button.h"
 #include "HomeAssistant.h"
+#include "Network.h"
 
 #include "ConfigManager.h"
-#include "Network.h"
 #include "Pump.h"
 #include "Sensor.h"
 #include "Status.h"
 #include "WebServer.h"
 
+// Global instances
+SystemStatus systemStatus;
+Config config;
+HADevice device("HydroSense");
+WiFiClient client;
+HAMqtt mqtt(client, device);
+ConfigManager configManager;
 NetworkManager networkManager(configManager, systemStatus);
 WebServerManager webServerManager(configManager);
 
-ConfigManager configManager;
-SystemStatus systemStatus;
 ESP8266WebServer webServer(80);
-DNSServer dnsServer;
-WiFiClient client;
-HADevice device;
-HAMqtt mqtt(client, device);  // Tylko jedna deklaracja
 
 // --- Definicje stałych i zmiennych globalnych
 
