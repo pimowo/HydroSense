@@ -1,22 +1,69 @@
 // Config.h
 #pragma once
 
-struct Config {
-    // Konfiguracja sieci
-    String wifi_ssid;
-    String wifi_password;
-    String mqtt_server;
-    String mqtt_user;
-    String mqtt_password;
+struct SystemStatus {
+  // Stan urządzenia
+  bool isServiceEnabled = true;
+  bool isPumpEnabled = true;
+  bool isSoundEnabled = true;
+  bool isAlarmActive = false;
+  bool isPumpRunning = false;
 
-    // Konfiguracja zbiornika
-    int tank_full;
-    int tank_empty;
-    int reserve_level;
-    int hysteresis;
-    int tank_diameter;
+  // Pomiary i liczniki
+  float currentWaterLevel = 0;
+  float currentDistance = 0;
+  unsigned long pumpStartTime = 0;
+  unsigned long lastMeasurementTime = 0;
+  unsigned long lastUpdateTime = 0;
 
-    // Konfiguracja pompy
-    int pump_delay;
-    int pump_work_time;
+  // Alarmy
+  bool isLowWaterAlarm = false;
+  bool isHighWaterAlarm = false;
+  bool isPumpAlarm = false;
+
+  // Stan połączenia
+  bool isWiFiConnected = false;
+  bool isMQTTConnected = false;
 };
+
+SystemStatus systemStatus;
+
+// eeprom
+struct Config {
+  uint8_t version;    // Wersja konfiguracji
+  bool soundEnabled;  // Status dźwięku (włączony/wyłączony)
+  char checksum;      // Suma kontrolna
+};
+Config config;
+
+// Struktura dla obsługi przycisku
+struct ButtonState {
+  bool lastState;                   // Poprzedni stan przycisku
+  unsigned long pressedTime = 0;    // Czas wciśnięcia przycisku
+  unsigned long releasedTime = 0;   // Czas puszczenia przycisku
+  bool isLongPressHandled = false;  // Flaga obsłużonego długiego naciśnięcia
+  bool isInitialized = false;
+};
+ButtonState buttonState;
+
+// Struktura dla dźwięków alarmowych
+struct AlarmTone {
+  uint16_t frequency;      // Częstotliwość dźwięku
+  uint16_t duration;       // Czas trwania
+  uint8_t repeats;         // Liczba powtórzeń
+  uint16_t pauseDuration;  // Przerwa między powtórzeniami
+};
+
+struct Status {
+  bool soundEnabled;
+  bool waterAlarmActive;
+  bool waterReserveActive;
+  bool isPumpActive;
+  bool isPumpDelayActive;
+  bool pumpSafetyLock;
+  bool isServiceMode;
+  unsigned long pumpStartTime;
+  unsigned long pumpDelayStartTime;
+  unsigned long lastSoundAlert;
+};
+Status status;
