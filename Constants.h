@@ -1,23 +1,15 @@
-#ifndef BUTTON_H
-#define BUTTON_H
+// Constants.h
+#ifndef CONSTANTS_H
+#define CONSTANTS_H
 
-#include <Arduino.h>  // Add this for HIGH definition
-#include "Constants.h"
-#include "SystemStatus.h"
+// Time constants
+const unsigned long LONG_PRESS_TIME = 1000;      // ms
+const unsigned long WIFI_CHECK_INTERVAL = 30000; // ms
+const unsigned long SOUND_ALERT_INTERVAL = 60000; // ms
 
-const unsigned long DEBOUNCE_DELAY = 50;  // Add debounce constant
-
-struct ButtonState {
-    int lastState = HIGH;
-    unsigned long pressedTime = 0;
-    unsigned long releasedTime = 0;  // Add missing member
-    bool isLongDetected = false;
-};
-
-extern ButtonState buttonState;
-extern void playConfirmationSound();  // Add missing declaration
-
-void setupButton();
-void handleButton();
+// Water level measurements (mm)
+const float TANK_EMPTY = 510.0;     // Distance when tank is empty
+const float RESERVE_LEVEL = 450.0;  // Water reserve level
+const float HYSTERESIS = 10.0;      // Level change hysteresis
 
 #endif

@@ -5,9 +5,6 @@
 #include "SystemStatus.h"
 #include "HomeAssistant.h"
 
-// Pin definitions
-const int BUZZER_PIN = 5;  // Adjust pin number as needed
-
 // Debug macro
 #ifdef DEBUG_MODE
   #define DEBUG_PRINT(x) Serial.println(x)
