@@ -8,14 +8,24 @@
 #include <DNSServer.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
+
+#include "Alarm.h"
+#include "Button.h"
+#include "Config.h"
 #include "ConfigManager.h"
+#include "HomeAssistant.h"
 #include "Network.h"
+#include "Pump.h"
+#include "Sensor.h"
+#include "Status.h"
+#include "SystemStatus.h"
 #include "WebServer.h"
 
 NetworkManager networkManager(configManager, systemStatus);
 WebServerManager webServerManager(configManager);
 
 ConfigManager configManager;
+SystemStatus systemStatus;
 ESP8266WebServer webServer(80);
 DNSServer dnsServer;
 WiFiClient client;
@@ -28,8 +38,6 @@ HAMqtt mqtt(client, device);  // Tylko jedna deklaracja
 const char* AP_SSID = "HydroSense";
 const char* AP_PASSWORD = "hydrosense";
 const byte DNS_PORT = 53;
-
-ConfigManager configManager;
 
 // Konfiguracja pinów ESP8266
 #define PIN_ULTRASONIC_TRIG D6  // Pin TRIG czujnika ultradźwiękowego

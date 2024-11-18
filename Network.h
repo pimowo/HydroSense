@@ -3,7 +3,7 @@
 
 #include <ESP8266WiFi.h>
 #include "ConfigManager.h"
-#include "SystemStatus.h"
+//#include "SystemStatus.h"
 
 class NetworkManager {
 public:

@@ -96,4 +96,8 @@ Ten projekt jest udostępniany na licencji MIT.
 Autor
 pimowo
 
+<<<<<<< HEAD
 Uwaga: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
+=======
+Uwaga: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
+>>>>>>> de6914bd3c2ad788858702fc534dd6432b3fa511
