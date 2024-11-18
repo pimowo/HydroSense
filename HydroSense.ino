@@ -20,6 +20,7 @@
 #include "Status.h"
 #include "SystemStatus.h"
 #include "WebServer.h"
+#include "Pins.h"
 
 NetworkManager networkManager(configManager, systemStatus);
 WebServerManager webServerManager(configManager);
