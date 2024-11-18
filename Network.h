@@ -1,25 +1,19 @@
 #ifndef NETWORK_H
 #define NETWORK_H
 
-#include <ESP8266WiFi.h>
-#include "ConfigManager.h"
-//#include "SystemStatus.h"
+#include "SystemStatus.h"
+#include "Config.h"
 
 class NetworkManager {
 public:
-    NetworkManager(ConfigManager& configManager, SystemStatus& systemStatus);
-    bool setupWiFi();  // Tylko jedna wersja, zwracająca bool
+    NetworkManager(ConfigManager& configManager, SystemStatus& status);
+    bool setupWiFi();
     void checkWiFiConnection();
-    bool isConnected() const;
     void setupAP();
-    String getLocalIP() const;
 
 private:
     ConfigManager& configManager;
-    SystemStatus& systemStatus;
-    static const unsigned long WIFI_CHECK_INTERVAL = 5000;  // 5 sekund
-    unsigned long lastWiFiCheck;
-    bool wifiInitiated;
+    SystemStatus& status;
 };
 
 #endif

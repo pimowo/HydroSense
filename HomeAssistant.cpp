@@ -1,5 +1,6 @@
-// HomeAssistant.cpp
 #include "HomeAssistant.h"
+#include "Constants.h"
+#include "SystemStatus.h"
 
 // Funkcja konfigurująca Home Assistant
 void setupHA() {
