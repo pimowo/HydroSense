@@ -5,12 +5,11 @@
 #include <ArduinoOTA.h>  // Aktualizacja oprogramowania przez sieć WiFi (Over-The-Air)
 #include <ESP8266WiFi.h>  // Biblioteka WiFi dedykowana dla układu ESP8266
 #include <EEPROM.h>  // Dostęp do pamięci nieulotnej EEPROM
+#include <WiFiManager.h>
 
 // --- Definicje stałych i zmiennych globalnych
 
-// Konfiguracja WiFi i MQTT
-const char* WIFI_SSID = "pimowo";                  // Nazwa sieci WiFi
-const char* WIFI_PASSWORD = "ckH59LRZQzCDQFiUgj";  // Hasło do sieci WiFi
+// Konfiguracja MQTT
 const char* MQTT_SERVER = "192.168.1.14";          // Adres IP serwera MQTT (Home Assistant)
 const char* MQTT_USER = "hydrosense";              // Użytkownik MQTT
 const char* MQTT_PASSWORD = "hydrosense";          // Hasło MQTT
@@ -413,29 +412,34 @@ void onPumpAlarmCommand(bool state, HASwitch* sender) {
 
 // Konfiguracja i zarządzanie połączeniem WiFi
 void setupWiFi() {
-    // Zmienne statyczne zachowujące wartość między wywołaniami
-    static unsigned long lastWiFiCheck = 0;  // Czas ostatniej próby połączenia
-    static bool wifiInitiated = false;  // Flaga pierwszej inicjalizacji WiFi
+    WiFiManager wifiManager;
     
-    ESP.wdtFeed();  // Reset watchdoga
+    // Konfiguracja AP
+    // Nazwa AP będzie "HydroSense-Setup"
+    // Hasło do AP: "hydrosense"
     
-    // Pierwsza inicjalizacja WiFi
-    if (!wifiInitiated) {
-        WiFi.begin(WIFI_SSID, WIFI_PASSWORD);  // Rozpoczęcie połączenia z siecią
-        wifiInitiated = true;  // Ustawienie flagi inicjalizacji
-        return;
-    }
-    
-    // Sprawdzenie stanu połączenia
-    if (WiFi.status() != WL_CONNECTED) {  // Jeśli nie połączono z siecią
-        if (millis() - lastWiFiCheck >= WIFI_CHECK_INTERVAL) {  // Sprawdź czy minął interwał
-            DEBUG_PRINT(".");  // Wskaźnik aktywności
-            lastWiFiCheck = millis();  // Aktualizacja czasu ostatniej próby
-            if (WiFi.status() == WL_DISCONNECTED) {  // Jeśli sieć jest dostępna ale rozłączona
-                WiFi.reconnect();  // Próba ponownego połączenia
-            }
+    wifiManager.setAPCallback([](WiFiManager *myWiFiManager) {
+        DEBUG_PRINT("Tryb punktu dostępowego");
+        DEBUG_PRINT("SSID: HydroSense");
+        DEBUG_PRINT("IP: 192.168.4.1");
+        if (status.soundEnabled) {
+            tone(BUZZER_PIN, 1000, 1000); // Sygnał dźwiękowy informujący o trybie AP
         }
+    });
+    
+    wifiManager.setConfigPortalTimeout(180); // 3 minuty na konfigurację
+    
+    // Próba połączenia lub utworzenia AP
+    if (!wifiManager.autoConnect("HydroSense", "hydrosense")) {
+        DEBUG_PRINT("Nie udało się połączyć i timeout upłynął");
+        ESP.restart(); // Restart ESP w przypadku niepowodzenia
     }
+    
+    DEBUG_PRINT("Połączono z WiFi!");
+    
+    // Pokaż uzyskane IP
+    DEBUG_PRINT("IP: ");
+    DEBUG_PRINT(WiFi.localIP().toString().c_str());
 }
 
 /**
@@ -913,14 +917,7 @@ void setup() {
     setupPin();
     
     // Nawiązanie połączenia WiFi
-    WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-    DEBUG_PRINT("Łączenie z WiFi");
-    while (WiFi.status() != WL_CONNECTED) {
-        delay(500);
-        DEBUG_PRINT(".");
-        ESP.wdtFeed(); // Reset watchdoga podczas łączenia
-    }
-    DEBUG_PRINT("\nPołączono z WiFi");
+    setupWiFi();
 
     // Próba połączenia MQTT
     DEBUG_PRINT("Rozpoczynam połączenie MQTT...");
@@ -959,17 +956,9 @@ void loop() {
     // Zabezpieczenie przed zawieszeniem systemu
     ESP.wdtFeed();  // Resetowanie licznika watchdog
     yield();  // Obsługa krytycznych zadań systemowych ESP8266
-    
-    // System aktualizacji bezprzewodowej
     ArduinoOTA.handle();  // Nasłuchiwanie żądań aktualizacji OTA
 
     // ZARZĄDZANIE ŁĄCZNOŚCIĄ
-
-    // Sprawdzanie i utrzymanie połączenia WiFi
-    if (WiFi.status() != WL_CONNECTED) {
-        setupWiFi();    // Próba ponownego połączenia z siecią
-        return;         // Powrót do początku pętli po próbie połączenia
-    }
     
     // Zarządzanie połączeniem MQTT
     if (!mqtt.isConnected()) {
