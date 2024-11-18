@@ -4,13 +4,29 @@
 #include <ArduinoHA.h>
 #include "SystemStatus.h"
 #include "Constants.h"
-#include "Pins.h"
+
+extern HADevice device;
+extern HAMqtt mqtt;
+
+// Sensor declarations
+extern HASensor sensorDistance;
+extern HASensor sensorLevel;
+extern HASensor sensorVolume;
+extern HASensor sensorPump;
+extern HASensor sensorWater;
+extern HASensor sensorAlarm;
+extern HASensor sensorReserve;
+
+// Switch declarations
+extern HASwitch switchService;
+extern HASwitch switchSound;
+extern HASwitch switchPumpAlarm;
 
 void setupHA();
 void firstUpdateHA();
 void updateHA();
-
-extern HASwitch switchService;
-extern HASwitch switchPumpAlarm;
+void onServiceSwitchCommand(bool state, HASwitch* s);
+void onSoundSwitchCommand(bool state, HASwitch* s);
+void onPumpAlarmCommand(bool state, HASwitch* s);
 
 #endif

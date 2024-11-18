@@ -1,23 +1,19 @@
+// Button.h
 #ifndef BUTTON_H
 #define BUTTON_H
 
-#include <Arduino.h>
-#include "Pins.h"
+#include "Constants.h"
 #include "SystemStatus.h"
-#include "Alarm.h"
 
 struct ButtonState {
+    int lastState = HIGH;
     unsigned long pressedTime = 0;
-    unsigned long releasedTime = 0;
-    bool lastState = HIGH;
+    bool isLongDetected = false;
 };
 
 extern ButtonState buttonState;
 
+void setupButton();
 void handleButton();
-void setupPin();
-
-const unsigned long DEBOUNCE_DELAY = 50;
-const unsigned long LONG_PRESS_TIME = 1000;
 
 #endif

@@ -2,17 +2,17 @@
 #define SYSTEM_STATUS_H
 
 struct SystemStatus {
-    bool isServiceMode = false;      // Tryb serwisowy
-    bool soundEnabled = true;        // Stan dźwięku
-    bool pumpActive = false;         // Stan pompy
-    bool pumpSafetyLock = false;    // Blokada bezpieczeństwa pompy
-    bool waterAlarmActive = false;   // Stan alarmu braku wody
-    bool waterReserveActive = false; // Stan rezerwy wody
-    bool isWiFiConnected = false;    // Status połączenia WiFi
-    bool isMQTTConnected = false;    // Status połączenia MQTT
-    unsigned long lastSoundAlert = 0; // Czas ostatniego alarmu dźwiękowego
+    bool isServiceMode = false;
+    bool soundEnabled = true;
+    bool pumpActive = false;
+    bool pumpSafetyLock = false;
+    bool waterAlarmActive = false;
+    bool waterReserveActive = false;
+    bool isWiFiConnected = false;
+    bool isMQTTConnected = false;
+    unsigned long lastSoundAlert = 0;
 };
 
-extern SystemStatus systemStatus;
+extern SystemStatus systemStatus; // Declaration of the global instance
 
 #endif
