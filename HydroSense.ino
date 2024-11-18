@@ -150,6 +150,17 @@ struct AlarmTone {
     uint16_t pauseDuration;   // Przerwa między powtórzeniami
 };
 
+struct Timers {
+    unsigned long lastMQTTRetry;
+    unsigned long lastMeasurement;
+    unsigned long lastOTACheck;
+    unsigned long lastMQTTLoop;
+    
+    Timers() : lastMQTTRetry(0), lastMeasurement(0), lastOTACheck(0), lastMQTTLoop(0) {}
+};
+
+static Timers timers;
+
 // Zerowanie liczników
 
 void handleMillisOverflow() {
@@ -375,7 +386,7 @@ void updatePump() {
     }
 }
 
-// Ztrzymanie pompy
+// Zatrzymanie pompy
 void stopPump() {
     digitalWrite(POMPA_PIN, LOW);
     status.isPumpActive = false;
@@ -384,7 +395,7 @@ void stopPump() {
     DEBUG_PRINT(F("Pompa zatrzymana"));
 }
 
-// Uruchomienienie pompy
+// Uruchomienie pompy
 void startPump() {
     digitalWrite(POMPA_PIN, HIGH);
     status.isPumpActive = true;
@@ -990,41 +1001,86 @@ void setup() {
 //     }
 // }
 
+// void loop() {
+//     unsigned long currentMillis = millis();
+//     static unsigned long lastMQTTRetry = 0;
+//     static unsigned long lastMeasurement = 0;
+
+//     // 1. KRYTYCZNE OPERACJE CZASOWE
+//     updatePump();  // Sterowanie pompą - przeniesione na początek jako priorytet
+//     handleMillisOverflow();  // Sprawdzenie przepełnienia licznika
+    
+//     // 2. PODSTAWOWE ZABEZPIECZENIA SYSTEMOWE
+//     ESP.wdtFeed();  // Resetowanie licznika watchdog
+//     yield();  // Obsługa krytycznych zadań systemowych ESP8266
+    
+//     // 3. OBSŁUGA WEJŚĆ I ALARMÓW
+//     handleButton();  // Przetwarzanie sygnałów z przycisków
+//     checkAlarmConditions();  // System ostrzeżeń dźwiękowych
+    
+//     // 4. POMIARY I AKTUALIZACJE (wykonywane z określonym interwałem)
+//     if (currentMillis - lastMeasurement >= MEASUREMENT_INTERVAL) {
+//         updateWaterLevel();  // Pomiar i aktualizacja stanu wody
+//         lastMeasurement = currentMillis;
+//     }
+    
+//     // 5. KOMUNIKACJA (najmniej priorytetowa)
+//     ArduinoOTA.handle();  // Nasłuchiwanie żądań aktualizacji OTA
+    
+//     // Zarządzanie połączeniem MQTT
+//     if (!mqtt.isConnected()) {
+//         if (currentMillis - lastMQTTRetry >= 10000) {
+//             lastMQTTRetry = currentMillis;
+//             DEBUG_PRINT("\nBrak połączenia MQTT - próba reconnect...");
+//             if (mqtt.begin(MQTT_SERVER, 1883, MQTT_USER, MQTT_PASSWORD)) {
+//                 DEBUG_PRINT("MQTT połączono ponownie!");
+//             }
+//         }
+//     }
+//     mqtt.loop();  // Obsługa komunikacji MQTT
+// }
+
 void loop() {
     unsigned long currentMillis = millis();
-    static unsigned long lastMQTTRetry = 0;
-    static unsigned long lastMeasurement = 0;
 
     // 1. KRYTYCZNE OPERACJE CZASOWE
-    updatePump();  // Sterowanie pompą - przeniesione na początek jako priorytet
-    handleMillisOverflow();  // Sprawdzenie przepełnienia licznika
+    handleMillisOverflow();
+    updatePump();           
     
-    // 2. PODSTAWOWE ZABEZPIECZENIA SYSTEMOWE
-    ESP.wdtFeed();  // Resetowanie licznika watchdog
-    yield();  // Obsługa krytycznych zadań systemowych ESP8266
+    // 2. PODSTAWOWE ZABEZPIECZENIA
+    ESP.wdtFeed();
+    yield();
     
     // 3. OBSŁUGA WEJŚĆ I ALARMÓW
-    handleButton();  // Przetwarzanie sygnałów z przycisków
-    checkAlarmConditions();  // System ostrzeżeń dźwiękowych
+    handleButton();
+    checkAlarmConditions();
     
-    // 4. POMIARY I AKTUALIZACJE (wykonywane z określonym interwałem)
-    if (currentMillis - lastMeasurement >= MEASUREMENT_INTERVAL) {
-        updateWaterLevel();  // Pomiar i aktualizacja stanu wody
-        lastMeasurement = currentMillis;
+    // 4. POMIARY (co MEASUREMENT_INTERVAL)
+    if (currentMillis - timers.lastMeasurement >= MEASUREMENT_INTERVAL) {
+        updateWaterLevel();
+        timers.lastMeasurement = currentMillis;
     }
     
-    // 5. KOMUNIKACJA (najmniej priorytetowa)
-    ArduinoOTA.handle();  // Nasłuchiwanie żądań aktualizacji OTA
+    // 5. KOMUNIKACJA MQTT (co 100ms)
+    if (currentMillis - timers.lastMQTTLoop >= 100) {
+        mqtt.loop();
+        timers.lastMQTTLoop = currentMillis;
+    }
     
-    // Zarządzanie połączeniem MQTT
+    // 6. OBSŁUGA OTA (co 1 sekundę)
+    if (currentMillis - timers.lastOTACheck >= 1000) {
+        ArduinoOTA.handle();
+        timers.lastOTACheck = currentMillis;
+    }
+    
+    // 7. ZARZĄDZANIE POŁĄCZENIEM MQTT (co 10 sekund)
     if (!mqtt.isConnected()) {
-        if (currentMillis - lastMQTTRetry >= 10000) {
-            lastMQTTRetry = currentMillis;
-            DEBUG_PRINT("\nBrak połączenia MQTT - próba reconnect...");
+        if (currentMillis - timers.lastMQTTRetry >= 10000) {
+            timers.lastMQTTRetry = currentMillis;
+            DEBUG_PRINT(F("Brak połączenia MQTT - próba reconnect..."));
             if (mqtt.begin(MQTT_SERVER, 1883, MQTT_USER, MQTT_PASSWORD)) {
-                DEBUG_PRINT("MQTT połączono ponownie!");
+                DEBUG_PRINT(F("MQTT połączono ponownie!"));
             }
         }
     }
-    mqtt.loop();  // Obsługa komunikacji MQTT
 }
