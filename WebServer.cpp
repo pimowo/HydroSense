@@ -1,5 +1,59 @@
-// WebServer.cpp
 #include "WebServer.h"
+
+WebServerManager::WebServerManager(ConfigManager& configManager)
+    : server(80), configManager(configManager) {
+}
+
+void WebServerManager::setup() {
+    server.on("/", std::bind(&WebServerManager::handleRoot, this));
+    server.on("/config", HTTP_GET, std::bind(&WebServerManager::handleGetConfig, this));
+    server.on("/config", HTTP_POST, std::bind(&WebServerManager::handleSaveConfig, this));
+    server.on("/scan", HTTP_GET, std::bind(&WebServerManager::handleWiFiScan, this));
+    server.onNotFound(std::bind(&WebServerManager::handleCaptivePortal, this));
+    server.begin();
+}
+
+void WebServerManager::handleClient() {
+    server.handleClient();
+}
+
+void WebServerManager::handleRoot() {
+    // Tu dodaj kod obsługi strony głównej
+}
+
+void WebServerManager::handleGetConfig() {
+    // Tu dodaj kod obsługi pobierania konfiguracji
+}
+
+void WebServerManager::handleSaveConfig() {
+    // Tu dodaj kod obsługi zapisywania konfiguracji
+}
+
+void WebServerManager::handleWiFiScan() {
+    // Tu dodaj kod obsługi skanowania sieci WiFi
+}
+
+bool WebServerManager::handleCaptivePortal() {
+    // Tu dodaj kod obsługi portalu przechwytującego
+    return false;
+}
+
+bool WebServerManager::isIp(String str) {
+    // Tu dodaj kod weryfikacji adresu IP
+    return false;
+}
+
+String WebServerManager::toStringIp(IPAddress ip) {
+    return ip.toString();
+}
+
+void WebServerManager::sendHeaders() {
+    server.sendHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    server.sendHeader("Pragma", "no-cache");
+    server.sendHeader("Expires", "-1");
+}
+
+// poniżej do poprawki
 
 void setupWebServer() {
   // Strona główna

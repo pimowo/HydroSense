@@ -8,9 +8,12 @@
 #include <DNSServer.h>
 #include <LittleFS.h>
 #include <ArduinoJson.h>
-//#include <HomeAssistant.h>
-
 #include "ConfigManager.h"
+#include "Network.h"
+#include "WebServer.h"
+
+NetworkManager networkManager(configManager, systemStatus);
+WebServerManager webServerManager(configManager);
 
 ConfigManager configManager;
 ESP8266WebServer webServer(80);
@@ -203,6 +206,11 @@ void setup() {
   Serial.begin(115200);             // Inicjalizacja portu szeregowego
   setupPin();
 
+ if (!networkManager.setupWiFi()) {
+        networkManager.setupAP();
+    }
+    webServerManager.setup();
+
   // Inicjalizacja managera konfiguracji
   if (!configManager.begin()) {
     Serial.println(F("Błąd inicjalizacji konfiguracji"));
@@ -246,6 +254,9 @@ void loop() {
 
   dnsServer.processNextRequest();
   webServer.handleClient();
+
+    networkManager.checkWiFiConnection();
+    webServerManager.handleClient();
 
   // KRYTYCZNE OPERACJE SYSTEMOWE
 
