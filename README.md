@@ -33,7 +33,7 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
    ```bash
    git clone https://github.com/pimowo/HydroSense.git
 
-### Potrzebne biblioteki Arduino:
+1. Potrzebne biblioteki Arduino:
 
 ESP8266WiFi
 ESP8266WebServer
@@ -41,6 +41,8 @@ ArduinoJson
 ArduinoHA (Home Assistant)
 LittleFS
 W Arduino IDE:
+
+2. W Arduino IDE:
 
 Wybierz płytkę: "NodeMCU 1.0 (ESP-12E Module)"
 Ustaw rozmiar Flash: "4MB (FS:1MB OTA:~1MB)"
