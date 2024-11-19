@@ -26,7 +26,7 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
 - 🔘 Przycisk fizyczny do resetowania alarmów
 - 💡 Diody LED do sygnalizacji stanu
 
-# 🚀 Instalacja
+### 🚀 Instalacja
 
 1. Sklonuj repozytorium:
 
@@ -48,7 +48,8 @@ Wybierz płytkę: "NodeMCU 1.0 (ESP-12E Module)"
 Ustaw rozmiar Flash: "4MB (FS:1MB OTA:~1MB)"
 Wybierz port szeregowy
 Wgraj program do ESP8266
-🏁 Pierwsze uruchomienie
+
+## 🏁 Pierwsze uruchomienie
 Po pierwszym uruchomieniu, urządzenie utworzy sieć WiFi "HydroSense-Setup".
 Połącz się z tą siecią.
 Otwórz przeglądarkę i wpisz adres: http://192.168.4.1.
