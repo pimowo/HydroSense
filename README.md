@@ -99,7 +99,5 @@ Ten projekt jest udostępniany na licencji MIT.
 
 👤 Autor
 pimowo
-pimowo@gmail.com
 
 Uwaga: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
-code
