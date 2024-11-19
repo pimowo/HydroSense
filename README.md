@@ -1,101 +1,91 @@
-# HydroSense_mini 🌊
+HydroSense
+HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty na ESP8266, zintegrowany z Home Assistant. System umożliwia zdalne monitorowanie poziomu wody, automatyczne sterowanie pompą oraz obsługę alarmów.
 
-## O Projekcie
-HydroSense_mini to inteligentny system automatycznego uzupełniania wody zaprojektowany dla akwarystów. Wykorzystując ESP8266, system zapewnia precyzyjną kontrolę poziomu wody w akwarium i zbiornika dolewki z pełną integracją z Home Assistant przez MQTT.
+Możliwości systemu
+Monitorowanie poziomu wody w czasie rzeczywistym
+Automatyczne sterowanie pompą z zabezpieczeniami
+Wielopoziomowy system alarmowy
+Pełna integracja z Home Assistant przez MQTT
+Interfejs webowy do konfiguracji
+Praca w trybie AP (konfiguracja) lub Client (normalna praca)
+Przechowywanie konfiguracji w pamięci EEPROM
+Komponenty sprzętowe
+Wymagane
+ESP8266 (NodeMCU v3 lub kompatybilny)
+Czujnik ultradźwiękowy JSN-SR04T
+Przekaźnik sterujący pompą
+Brzęczyk do sygnalizacji alarmów
+Opcjonalne
+Przycisk fizyczny do resetowania alarmów
+Diody LED do sygnalizacji stanu
+Instalacja
+Sklonuj repozytorium:
+git clone https://github.com/pimowo/HydroSense.git
+Potrzebne biblioteki Arduino:
 
-## Funkcje
-- 📊 Pomiar poziomu wody z dokładnością do 1mm (HC-SR04)
-- 🚰 Automatyczne uzupełnianie wody w akwarium
-- 🏠 Pełna integracja z Home Assistant przez MQTT
-- ⚡ Zaawansowane zabezpieczenia pompy:
-  - Maksymalny czas pracy (5 min)
-  - Opóźnienie ponownego startu (1 min)
-  - Blokada bezpieczeństwa
-- 🔧 Tryb serwisowy
-- 🔔 Konfigurowalne alarmy dźwiękowe
-- 💾 Trwała pamięć ustawień (EEPROM)
+ESP8266WiFi
+ESP8266WebServer
+ArduinoJson
+ArduinoHA (Home Assistant)
+LittleFS
+W Arduino IDE:
 
-## Wymagania Sprzętowe
-
-### Komponenty
-- ESP8266 (NodeMCU v3)
-- Czujnik ultradźwiękowy HC-SR04
-- Czujnik poziomu wody (pływakowy)
-- Przekaźnik do sterowania pompą
-- Buzzer aktywny
-- Przycisk taktowy
-- Zasilacz 5V/1A
-
-### Podłączenie Pinów
-| Komponent | Pin ESP8266 |
-|-----------|-------------|
-| HC-SR04 TRIG | D6 (GPIO12) |
-| HC-SR04 ECHO | D7 (GPIO13) |
-| Czujnik poziomu | D5 (GPIO14) |
-| Przekaźnik pompy | D1 (GPIO5) |
-| Buzzer | D2 (GPIO4) |
-| Przycisk | D3 (GPIO0) |
-
-## Wymagania Programowe
-- Arduino IDE
-- Biblioteki:
-  - ESP8266WiFi
-  - ArduinoHA
-  - PubSubClient
-  - EEPROM
-
-## Konfiguracja
-1. Skopiuj plik `HydroSense_mini.ino`
-2. Uzupełnij dane w sekcji konfiguracyjnej:
-   ```cpp
-   const char* WIFI_SSID = "twoja_siec";
-   const char* WIFI_PASSWORD = "twoje_haslo";
-   const char* MQTT_SERVER = "ip_home_assistant";
-   const char* MQTT_USER = "uzytkownik";
-   const char* MQTT_PASSWORD = "haslo";
-Dostosuj parametry zbiornika:
-C++
-const int DISTANCE_WHEN_FULL = 65;   // mm
-const int DISTANCE_WHEN_EMPTY = 510;  // mm
-const int DISTANCE_RESERVE = 450;     // mm
-const int TANK_DIAMETER = 150;        // mm
-Funkcje w Home Assistant
-Sensory
-📏 Pomiar odległości (mm)
-💧 Poziom wody (%)
-🌊 Objętość wody (L)
-💪 Status pompy (ON/OFF)
-⚠️ Alarm braku wody
-⚡ Alarm rezerwy
-Przełączniki
-🔧 Tryb serwisowy
-🔔 Włącznik dźwięku
-⚠️ Reset alarmu pompy
-Obsługa
-Przycisk Fizyczny
-Krótkie naciśnięcie: włącza/wyłącza tryb serwisowy
-Długie naciśnięcie (>1s): kasuje blokadę bezpieczeństwa pompy
-Zabezpieczenia
-Maksymalny czas pracy pompy (5 min)
-Opóźnienie ponownego startu (1 min)
-Watchdog programowy
-Blokada bezpieczeństwa po przekroczeniu czasu pracy
-Kontrola poziomu w akwarium
-Status Projektu
-🚧 Wersja: 13.11.2024
-
-Podstawowa funkcjonalność
+Wybierz płytkę: "NodeMCU 1.0 (ESP-12E Module)"
+Ustaw rozmiar Flash: "4MB (FS:1MB OTA:~1MB)"
+Wybierz port szeregowy
+Wgraj program do ESP8266
+Pierwsze uruchomienie
+Po pierwszym uruchomieniu, urządzenie utworzy sieć WiFi "HydroSense-Setup".
+Połącz się z tą siecią.
+Otwórz przeglądarkę i wpisz adres: http://192.168.4.1.
+Skonfiguruj:
+Połączenie WiFi
+Parametry MQTT dla Home Assistant
+Wymiary zbiornika
+Ustawienia pompy
+Struktura projektu
+Code
+HydroSense/
+├── HydroSense.ino      # Plik główny
+├── Alarm.cpp/h         # System alarmowy
+├── Button.cpp/h        # Obsługa przycisków
+├── ConfigManager.cpp/h # Zarządzanie konfiguracją
+├── HomeAssistant.cpp/h # Integracja z HA
+├── Network.cpp/h       # Obsługa sieci
+├── Sensor.cpp/h        # Obsługa czujników
+└── WebServer.cpp/h     # Serwer www
 Integracja z Home Assistant
-System alarmów
-Interfejs Web
-Aktualizacje OTA
-Autor
-@pimowo
-PMW 
-pimowo@gmail.com
+System udostępnia w Home Assistant:
 
+Czujnik poziomu wody (%)
+Czujnik objętości wody (L)
+Przełącznik pompy
+Przełącznik resetowania alarmu
+Czujnik stanu pompy
+Czujnik połączenia WiFi
+Funkcje bezpieczeństwa
+Zabezpieczenie przed pracą pompy "na sucho"
+Monitorowanie czasu pracy pompy
+Automatyczne wyłączenie po przekroczeniu limitu czasu
+Wykrywanie awarii czujnika poziomu
+Automatyczna rekonfiguracja WiFi przy utracie połączenia
+Konfiguracja
+Wszystkie parametry można skonfigurować przez interfejs webowy:
+
+Parametry sieci (WiFi, MQTT)
+Wymiary zbiornika
+Poziomy alarmowe
+Czasy pracy pompy
+Kalibracja czujnika
+Statusy LED
+Ciągłe światło: Normalna praca
+Wolne miganie: Tryb konfiguracji (AP)
+Szybkie miganie: Problem z połączeniem
+Podwójne mignięcie: Alarm aktywny
 Licencja
-MIT License - możesz swobodnie używać, modyfikować i rozpowszechniać kod.
+Ten projekt jest udostępniany na licencji MIT.
 
-Wsparcie
-W razie problemów lub pytań, utwórz Issue w repozytorium GitHub.
+Autor
+pimowo
+
+Uwaga: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
