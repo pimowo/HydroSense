@@ -16,14 +16,14 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
 
 ### Wymagane
 
-- ⚙️ ESP8266 (NodeMCU v3 lub kompatybilny)
+- ⚙️ ESP8266 (Wemos D1 MINI lub kompatybilny)
 - 🎛️ Czujnik ultradźwiękowy JSN-SR04T
 - 🔌 Przekaźnik sterujący pompą
 - 🔊 Brzęczyk do sygnalizacji alarmów
 
 ### Opcjonalne
 
-- 🔘 Przycisk fizyczny do resetowania alarmów
+- 🔘 Przycisk fizyczny do resetowania alarmów i przęłączania trybu "Serwis"
 - 💡 Diody LED do sygnalizacji stanu
 
 ## 🚀 Instalacja
@@ -36,52 +36,36 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
 
 2. Potrzebne biblioteki Arduino:
 
-   - ESP8266WiFi
-   - ESP8266WebServer
-   - ArduinoJson
+   - Arduino
    - ArduinoHA (Home Assistant)
-   - LittleFS
+   - ArduinoOTA
+   - ESP8266WiFi
+   - EEPROM
+   - WiFiManager
 
 3. W Arduino IDE:
 
-   - Wybierz płytkę: "NodeMCU 1.0 (ESP-12E Module)"
-   - Ustaw rozmiar Flash: "4MB (FS:1MB OTA:~1MB)"
+   - Wybierz płytkę: "Wemod D1 MINI"
    - Wybierz port szeregowy
    - Wgraj program do ESP8266
 
 ## 🏁 Pierwsze uruchomienie
 
-1. Po pierwszym uruchomieniu, urządzenie utworzy sieć WiFi "HydroSense-Setup".
+1. Po pierwszym uruchomieniu, urządzenie utworzy sieć WiFi "HydroSense".
 2. Połącz się z tą siecią.
 3. Otwórz przeglądarkę i wpisz adres: http://192.168.4.1.
 4. Skonfiguruj:
    - Połączenie WiFi
-   - Parametry MQTT dla Home Assistant
-   - Wymiary zbiornika
-   - Ustawienia pompy
-
-## 📂 Struktura projektu
-
-HydroSense/
-├── HydroSense.ino      # Plik główny
-├── Alarm.cpp/h         # System alarmowy
-├── Button.cpp/h        # Obsługa przycisków
-├── ConfigManager.cpp/h # Zarządzanie konfiguracją
-├── HomeAssistant.cpp/h # Integracja z HA
-├── Network.cpp/h       # Obsługa sieci
-├── Sensor.cpp/h        # Obsługa czujników
-└── WebServer.cpp/h     # Serwer www
 
 ## 🏡 Integracja z Home Assistant
 
 System udostępnia w Home Assistant:
 
-- 🌊 Czujnik poziomu wody (%)
-- 💧 Czujnik objętości wody (L)
-- 🔌 Przełącznik pompy
-- 🚨 Przełącznik resetowania alarmu
-- ⚙️ Czujnik stanu pompy
-- 📶 Czujnik połączenia WiFi
+- 🌊 Czujnik 1 Poziomu wody (%)
+- 💧 Czujnik 2 Objętość wody (L)
+- 🔌 Czujnik 3 Praca pompy (ON/OFF)
+- 📶 Czujnik 4 Pomiar odległości (mm)
+- 🚨 Przełącznik 1 Resetowanie alarmu
 
 ## 🔒 Funkcje bezpieczeństwa
 
@@ -98,6 +82,7 @@ Wszystkie parametry można skonfigurować przez interfejs webowy:
 - 📶 Parametry sieci (WiFi, MQTT)
 - 📏 Wymiary zbiornika
 - 🚨 Poziomy alarmowe
+- ⏱️ Czas opóźnienia włączenia pompy
 - ⏱️ Czasy pracy pompy
 - 🛠️ Kalibracja czujnika
 
@@ -115,6 +100,7 @@ Ten projekt jest udostępniany na licencji MIT.
 ## 👤 Autor
 
 pimowo
+pimowo@gmail.com
 
 **Uwaga**: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
 ```
