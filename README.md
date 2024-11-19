@@ -1,6 +1,3 @@
-Oto cały plik README.md w formacie .txt:
-
-```plaintext
 # HydroSense
 
 HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty na ESP8266, zintegrowany z Home Assistant. System umożliwia zdalne monitorowanie poziomu wody, automatyczne sterowanie pompą oraz obsługę alarmów.
