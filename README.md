@@ -64,11 +64,16 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
 
 System udostępnia w Home Assistant:
 
-- 🌊 Czujnik 1 Poziomu wody (%)
-- 💧 Czujnik 2 Objętość wody (L)
-- 🔌 Czujnik 3 Praca pompy (ON/OFF)
-- 📶 Czujnik 4 Pomiar odległości (mm)
-- 🚨 Przełącznik 1 Resetowanie alarmu
+- 🚨  Przełącznik 1 Alarm pompy (OFF)
+- 🔊  Przełącznik 2 Dźwięk (ON/OFF)
+- 🛠️  Przełącznik 3 Serwis (ON/OFF)
+- 🚱  Sensor 1 Brak wody (ON/OFF)
+- 🌊  Sensor 2 Czujnik wody (ON/OFF)
+- 💧  Sensor 3 Objętość wody (L)
+- 📏  Sensor 4 Pomiar odległości (mm)
+- 📊  Sensor 5 Poziom wody (%)
+- 🪣  Sensor 6 Rezerwa wody (ON/OFF)
+- 🔌  Sensor 7 Status pompy (ON/OFF)
 
 ## 🔒 Funkcje bezpieczeństwa
 
