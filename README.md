@@ -1,6 +1,7 @@
+Markdown
 # HydroSense
 
-HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty na ESP8266, zintegrowany z Home Assistant. System umożliwia zdalne monitorowanie poziomu wody, automatyczne sterowanie pompą oraz powiadamianie o stanach alarmowych.
+HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty na ESP8266, zintegrowany z Home Assistant. System umożliwia zdalne monitorowanie poziomu wody, automatyczne sterowanie pompą oraz obsługę alarmów.
 
 ## Możliwości systemu
 
@@ -10,7 +11,7 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
 - Pełna integracja z Home Assistant przez MQTT
 - Interfejs webowy do konfiguracji
 - Praca w trybie AP (konfiguracja) lub Client (normalna praca)
-- Przechowywanie konfiguracji w pamięci Flash
+- Przechowywanie konfiguracji w pamięci EEPROM
 
 ## Komponenty sprzętowe
 
@@ -30,6 +31,7 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
 ```bash
 git clone https://github.com/pimowo/HydroSense.git
 Potrzebne biblioteki Arduino:
+
 ESP8266WiFi
 ESP8266WebServer
 ArduinoJson
@@ -41,11 +43,10 @@ Wybierz płytkę: "NodeMCU 1.0 (ESP-12E Module)"
 Ustaw rozmiar Flash: "4MB (FS:1MB OTA:~1MB)"
 Wybierz port szeregowy
 Wgraj program do ESP8266
-
 Pierwsze uruchomienie
-Po pierwszym uruchomieniu, urządzenie utworzy sieć WiFi "HydroSense-Setup"
-Połącz się z tą siecią
-Otwórz http://192.168.4.1
+Po pierwszym uruchomieniu, urządzenie utworzy sieć WiFi "HydroSense-Setup".
+Połącz się z tą siecią.
+Otwórz przeglądarkę i wpisz adres: http://192.168.4.1.
 Skonfiguruj:
 Połączenie WiFi
 Parametry MQTT dla Home Assistant
@@ -94,10 +95,8 @@ Licencja
 Ten projekt jest udostępniany na licencji MIT.
 
 Autor
-pimowo
+PMW pimowo@gmail.com
 
-<<<<<<< HEAD
 Uwaga: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
-=======
-Uwaga: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
->>>>>>> de6914bd3c2ad788858702fc534dd6432b3fa511
+
+Code
