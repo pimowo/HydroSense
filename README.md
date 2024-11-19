@@ -26,14 +26,13 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
 - 🔘 Przycisk fizyczny do resetowania alarmów
 - 💡 Diody LED do sygnalizacji stanu
 
-### 🚀 Instalacja
+## 🚀 Instalacja
 
 1. Sklonuj repozytorium:
 
    ```bash
    git clone https://github.com/pimowo/HydroSense.git
-
-1. Potrzebne biblioteki Arduino:
+Potrzebne biblioteki Arduino:
 
 ESP8266WiFi
 ESP8266WebServer
@@ -42,14 +41,11 @@ ArduinoHA (Home Assistant)
 LittleFS
 W Arduino IDE:
 
-2. W Arduino IDE:
-
 Wybierz płytkę: "NodeMCU 1.0 (ESP-12E Module)"
 Ustaw rozmiar Flash: "4MB (FS:1MB OTA:~1MB)"
 Wybierz port szeregowy
 Wgraj program do ESP8266
-
-## 🏁 Pierwsze uruchomienie
+🏁 Pierwsze uruchomienie
 Po pierwszym uruchomieniu, urządzenie utworzy sieć WiFi "HydroSense-Setup".
 Połącz się z tą siecią.
 Otwórz przeglądarkę i wpisz adres: http://192.168.4.1.
@@ -104,3 +100,4 @@ Ten projekt jest udostępniany na licencji MIT.
 pimowo
 
 Uwaga: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
+```
