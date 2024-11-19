@@ -55,16 +55,16 @@ Parametry MQTT dla Home Assistant
 Wymiary zbiornika
 Ustawienia pompy
 📂 Struktura projektu
-Code
 HydroSense/
-├── HydroSense.ino      # Plik główny
-├── Alarm.cpp/h         # System alarmowy
-├── Button.cpp/h        # Obsługa przycisków
+├── HydroSense.ino # Plik główny
+├── Alarm.cpp/h # System alarmowy
+├── Button.cpp/h # Obsługa przycisków
 ├── ConfigManager.cpp/h # Zarządzanie konfiguracją
 ├── HomeAssistant.cpp/h # Integracja z HA
-├── Network.cpp/h       # Obsługa sieci
-├── Sensor.cpp/h        # Obsługa czujników
-└── WebServer.cpp/h     # Serwer www
+├── Network.cpp/h # Obsługa sieci
+├── Sensor.cpp/h # Obsługa czujników
+└── WebServer.cpp/h # Serwer www
+
 🏡 Integracja z Home Assistant
 System udostępnia w Home Assistant:
 
@@ -100,3 +100,4 @@ Ten projekt jest udostępniany na licencji MIT.
 pimowo
 
 Uwaga: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
+```
