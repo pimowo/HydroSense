@@ -101,3 +101,5 @@ Ten projekt jest udostępniany na licencji MIT.
 pimowo
 
 Uwaga: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
+
+Code
