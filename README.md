@@ -51,11 +51,14 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
 
 ## 🏁 Pierwsze uruchomienie
 
-1. Po pierwszym uruchomieniu, urządzenie utworzy sieć WiFi "HydroSense".
-2. Połącz się z tą siecią.
-3. Otwórz przeglądarkę i wpisz adres: http://192.168.4.1.
+1. Po pierwszym uruchomieniu, urządzenie utworzy AP:
+  - SSID: HydroSense
+  - Hasło: hydrosense
+2. Połącz się z tą siecią
+3. Otwórz przeglądarkę i wpisz adres: http://192.168.4.1
 4. Skonfiguruj:
    - Połączenie WiFi
+5. 
 
 ## 🏡 Integracja z Home Assistant
 
