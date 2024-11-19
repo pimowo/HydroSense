@@ -26,7 +26,7 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
 - 🔘 Przycisk fizyczny do resetowania alarmów
 - 💡 Diody LED do sygnalizacji stanu
 
-#### 🚀 Instalacja
+### 🚀 Instalacja
 
 1. Sklonuj repozytorium:
 
