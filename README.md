@@ -32,6 +32,8 @@ HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty
 
    ```bash
    git clone https://github.com/pimowo/HydroSense.git
+   ```
+   
 Potrzebne biblioteki Arduino:
 
 ESP8266WiFi
@@ -100,4 +102,3 @@ Ten projekt jest udostępniany na licencji MIT.
 pimowo
 
 Uwaga: Ten projekt jest w trakcie rozwoju. Niektóre funkcje mogą ulec zmianie.
-```
