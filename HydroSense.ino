@@ -1,44 +1,44 @@
 // --- Biblioteki
 
 #include <Arduino.h>  // Podstawowa biblioteka Arduino zawierająca funkcje rdzenia
-#include <ArduinoHA.h>  // Integracja z Home Assistant przez protokół MQTT
-#include <ArduinoOTA.h>  // Aktualizacja oprogramowania przez sieć WiFi (Over-The-Air)
+#include <ArduinoHA.h>  // Biblioteka do integracji z Home Assistant przez protokół MQTT
+#include <ArduinoOTA.h>  // Biblioteka do aktualizacji oprogramowania przez sieć WiFi
 #include <ESP8266WiFi.h>  // Biblioteka WiFi dedykowana dla układu ESP8266
-#include <EEPROM.h>  // Dostęp do pamięci nieulotnej EEPROM
-#include <WiFiManager.h>
+#include <EEPROM.h>  // Biblioteka do dostępu do pamięci nieulotnej EEPROM
+#include <WiFiManager.h>  // Biblioteka do zarządzania połączeniami WiFi
 
 // --- Definicje stałych i zmiennych globalnych
 
 // Wersja systemu
-const char* SOFTWARE_VERSION = "18.11.24";
+const char* SOFTWARE_VERSION = "19.11.24";
 
 // Konfiguracja MQTT
-const char* MQTT_SERVER = "192.168.1.14";          // Adres IP serwera MQTT (Home Assistant)
-const char* MQTT_USER = "hydrosense";              // Użytkownik MQTT
-const char* MQTT_PASSWORD = "hydrosense";          // Hasło MQTT
+const char* MQTT_SERVER = "192.168.1.14";  // Adres IP serwera MQTT (Home Assistant)
+const char* MQTT_USER = "hydrosense";  // Użytkownik MQTT
+const char* MQTT_PASSWORD = "hydrosense";  // Hasło MQTT
 
 // Konfiguracja pinów ESP8266
 const int PIN_ULTRASONIC_TRIG = D6;  // Pin TRIG czujnika ultradźwiękowego
 const int PIN_ULTRASONIC_ECHO = D7;  // Pin ECHO czujnika ultradźwiękowego
 
-const int PIN_WATER_LEVEL = D5;      // Pin czujnika poziomu wody w akwarium
-const int POMPA_PIN = D1;            // Pin sterowania pompą
-const int BUZZER_PIN = D2;           // Pin buzzera do alarmów dźwiękowych
-const int PRZYCISK_PIN = D3;         // Pin przycisku do kasowania alarmów
+const int PIN_WATER_LEVEL = D5;  // Pin czujnika poziomu wody w akwarium
+const int POMPA_PIN = D1;  // Pin sterowania pompą
+const int BUZZER_PIN = D2;  // Pin buzzera do alarmów dźwiękowych
+const int PRZYCISK_PIN = D3;  // Pin przycisku do kasowania alarmów
 
 // Stałe czasowe (wszystkie wartości w milisekundach)
-const unsigned long ULTRASONIC_TIMEOUT = 50;       // Timeout pomiaru czujnika ultradźwiękowego
+const unsigned long ULTRASONIC_TIMEOUT = 50;  // Timeout pomiaru czujnika ultradźwiękowego
 const unsigned long MEASUREMENT_INTERVAL = 60000;  // Interwał między pomiarami
-const unsigned long WIFI_CHECK_INTERVAL = 5000;    // Interwał sprawdzania połączenia WiFi
-const unsigned long WATCHDOG_TIMEOUT = 8000;       // Timeout dla watchdoga
-const unsigned long SENSOR_READ_INTERVAL = 5000;   // Częstotliwość odczytu czujnika
-const unsigned long WIFI_RETRY_INTERVAL = 10000;   // Interwał prób połączenia WiFi
-const unsigned long BUTTON_DEBOUNCE_TIME = 50;     // Czas debouncingu przycisku
-const unsigned long LONG_PRESS_TIME = 1000;        // Czas długiego naciśnięcia przycisku
+const unsigned long WIFI_CHECK_INTERVAL = 5000;  // Interwał sprawdzania połączenia WiFi
+const unsigned long WATCHDOG_TIMEOUT = 8000;  // Timeout dla watchdoga
+const unsigned long SENSOR_READ_INTERVAL = 5000;  // Częstotliwość odczytu czujnika
+const unsigned long WIFI_RETRY_INTERVAL = 10000;  // Interwał prób połączenia WiFi
+const unsigned long BUTTON_DEBOUNCE_TIME = 50;  // Czas debouncingu przycisku
+const unsigned long LONG_PRESS_TIME = 1000;  // Czas długiego naciśnięcia przycisku
 const unsigned long SOUND_ALERT_INTERVAL = 60000;  // Interwał między sygnałami dźwiękowymi
-const unsigned long MQTT_LOOP_INTERVAL = 100;    // Obsługa MQTT co 100ms
-const unsigned long OTA_CHECK_INTERVAL = 1000;   // Sprawdzanie OTA co 1s
-const unsigned long MQTT_RETRY_INTERVAL = 10000; // Próba połączenia MQTT co 10s
+const unsigned long MQTT_LOOP_INTERVAL = 100;  // Obsługa MQTT co 100ms
+const unsigned long OTA_CHECK_INTERVAL = 1000;  // Sprawdzanie OTA co 1s
+const unsigned long MQTT_RETRY_INTERVAL = 10000;  // Próba połączenia MQTT co 10s
 
 // Konfiguracja EEPROM
 #define EEPROM_SOUND_STATE_ADDR 0    // Adres przechowywania stanu dźwięku
@@ -62,11 +62,13 @@ const int TANK_EMPTY = 510;  // Odległość gdy zbiornik jest pusty (mm)
 const int RESERVE_LEVEL = 450;  // Poziom rezerwy wody (mm)
 const int HYSTERESIS = 10;  // Histereza przy zmianach poziomu (mm)
 const int TANK_DIAMETER = 150;  // Średnica zbiornika (mm)
-const int SENSOR_AVG_SAMPLES = 3;  // Liczba próbek do uśrednienia pomiaru
+const int VALID_MARGIN = 25;  // Margines błędu dla poprawnych pomiarów (mm)
+
 const int PUMP_DELAY = 5;  // Opóźnienie uruchomienia pompy (sekundy)
-const int PUMP_WORK_TIME = 60;  // Czas pracy pompy
-const int VALID_MARGIN = 25;  // Margines błędu dla poprawnych pomiarów w mm
+const int PUMP_WORK_TIME = 60;  // Czas pracy pompy (sekundy)
+
 const float EMA_ALPHA = 0.2f;  // Współczynnik wygładzania dla średniej wykładniczej (0-1)
+const int SENSOR_AVG_SAMPLES = 3;  // Liczba próbek do uśrednienia pomiaru
 
 // Zmienne globalne
 float lastFilteredDistance = 0;  // Dla filtra EMA (Exponential Moving Average)
@@ -100,39 +102,42 @@ HADevice device("HydroSense");  // Definicja urządzenia dla Home Assistant
 HAMqtt mqtt(client, device);  // Klient MQTT dla Home Assistant
 
 // Sensory pomiarowe
-HASensor sensorDistance("water_level");                   // Odległość od lustra wody (w mm)
-HASensor sensorLevel("water_level_percent");              // Poziom wody w zbiorniku (w procentach)
-HASensor sensorVolume("water_volume");                    // Objętość wody (w litrach)
+HASensor sensorDistance("water_level");  // Odległość od lustra wody (w mm)
+HASensor sensorLevel("water_level_percent");  // Poziom wody w zbiorniku (w procentach)
+HASensor sensorVolume("water_volume");  // Objętość wody (w litrach)
 
 // Sensory statusu
-HASensor sensorPump("pump");                              // Status pracy pompy (ON/OFF)
-HASensor sensorWater("water");                            // Status czujnika poziomu w akwarium (ON=niski/OFF=ok)
+HASensor sensorPump("pump");  // Praca pompy (ON/OFF)
+HASensor sensorWater("water");  // Czujnik poziomu w akwarium (ON=niski/OFF=ok)
 
 // Sensory alarmowe
-HASensor sensorAlarm("water_alarm");                      // Alarm braku wody w zbiorniku dolewki
-HASensor sensorReserve("water_reserve");                  // Alarm rezerwy w zbiorniku dolewki
+HASensor sensorAlarm("water_alarm");  // Brak wody w zbiorniku dolewki
+HASensor sensorReserve("water_reserve");  // Rezerwa w zbiorniku dolewki
 
 // Przełączniki
-HASwitch switchPumpAlarm("pump_alarm");                        // Przełącznik resetowania blokady pompy
-HASwitch switchService("service_mode");                   // Przełącznik trybu serwisowego
-HASwitch switchSound("sound_switch");                     // Przełącznik dźwięku alarmu
+HASwitch switchPumpAlarm("pump_alarm");  // Resetowania blokady pompy
+HASwitch switchService("service_mode");  // Tryb serwisowy
+HASwitch switchSound("sound_switch");  // Dźwięki systemu
 
 // --- Deklaracje funkcji i struktury
 
+// Struktura do przechowywania różnych stanów i parametrów systemu
 struct Status {
-    bool soundEnabled;
-    bool waterAlarmActive;
-    bool waterReserveActive;
-    bool isPumpActive;
-    bool isPumpDelayActive;
-    bool pumpSafetyLock;
-    bool isServiceMode;
-    float waterLevelBeforePump;
-    unsigned long pumpStartTime;
-    unsigned long pumpDelayStartTime;
-    unsigned long lastSoundAlert;      
-    unsigned long lastSuccessfulMeasurement;
+    bool soundEnabled;  // Flaga wskazująca, czy dźwięk jest włączony
+    bool waterAlarmActive;  // Flaga wskazująca, czy alarm wodny jest aktywny
+    bool waterReserveActive;  // Flaga wskazująca, czy rezerwa wody jest aktywna
+    bool isPumpActive;  // Flaga wskazująca, czy pompa jest aktywna
+    bool isPumpDelayActive;  // Flaga wskazująca, czy opóźnienie pompy jest aktywne
+    bool pumpSafetyLock;  // Flaga wskazująca, czy blokada bezpieczeństwa pompy jest aktywna
+    bool isServiceMode;  // Flaga wskazująca, czy tryb serwisowy jest włączony
+    float waterLevelBeforePump;  // Poziom wody przed uruchomieniem pompy
+    unsigned long pumpStartTime;  // Znacznik czasu uruchomienia pompy
+    unsigned long pumpDelayStartTime;  // Znacznik czasu rozpoczęcia opóźnienia pompy
+    unsigned long lastSoundAlert;  // Znacznik czasu ostatniego alertu dźwiękowego
+    unsigned long lastSuccessfulMeasurement;  // Znacznik czasu ostatniego udanego pomiaru
 };
+
+// Instancja struktury Status
 Status status;
 
 // Struktura dla obsługi przycisku
@@ -143,47 +148,51 @@ struct ButtonState {
     bool isLongPressHandled = false; // Flaga obsłużonego długiego naciśnięcia
     bool isInitialized = false; 
 };
+
+// Instancja struktury ButtonState
 ButtonState buttonState;
 
 // Struktura dla dźwięków alarmowych
 struct AlarmTone {
-    uint16_t frequency;        // Częstotliwość dźwięku
-    uint16_t duration;         // Czas trwania
-    uint8_t repeats;          // Liczba powtórzeń
-    uint16_t pauseDuration;   // Przerwa między powtórzeniami
+    uint16_t frequency;  // Częstotliwość dźwięku
+    uint16_t duration;  // Czas trwania
+    uint8_t repeats;  // Liczba powtórzeń
+    uint16_t pauseDuration;  // Przerwa między powtórzeniami
 };
 
+// Struktura do przechowywania różnych znaczników czasowych
 struct Timers {
-    unsigned long lastMQTTRetry;
-    unsigned long lastMeasurement;
-    unsigned long lastOTACheck;
-    unsigned long lastMQTTLoop;
+    unsigned long lastMQTTRetry;  // Znacznik czasu ostatniej próby połączenia MQTT
+    unsigned long lastMeasurement;  // Znacznik czasu ostatniego pomiaru
+    unsigned long lastOTACheck;  // Znacznik czasu ostatniego sprawdzenia OTA (Over-The-Air)
+    unsigned long lastMQTTLoop;  // Znacznik czasu ostatniego cyklu pętli MQTT
     
+    // Konstruktor inicjalizujący wszystkie znaczniki czasowe na 0
     Timers() : lastMQTTRetry(0), lastMeasurement(0), lastOTACheck(0), lastMQTTLoop(0) {}
 };
 
+// Instancja struktury Timers
 static Timers timers;
 
 // Zerowanie liczników
-
 void handleMillisOverflow() {
-    unsigned long currentMillis = millis();
+    unsigned long currentMillis = millis();  // Pobierz bieżącą wartość millis()
     
-    // Sprawdź czy zbliża się przepełnienie
+    // Sprawdź, czy zbliża się przepełnienie wartości millis()
     if (currentMillis > MILLIS_OVERFLOW_THRESHOLD) {
-        // Reset wszystkich liczników czasu
+        // Reset wszystkich liczników czasu w strukturze status
         status.pumpStartTime = 0;
         status.pumpDelayStartTime = 0;
         status.lastSoundAlert = 0;
         status.lastSuccessfulMeasurement = 0;
         
-        DEBUG_PRINT(F("Millis overflow - reset timerów"));
+        DEBUG_PRINT(F("Millis overflow - reset timerów"));  // Wydrukuj komunikat debugowania
     }
     
-    // Sprawdź czy wystąpiło przepełnienie
+    // Sprawdź, czy wystąpiło przepełnienie wartości millis()
     if (currentMillis < lastMeasurement) {
-        lastMeasurement = currentMillis;
-        DEBUG_PRINT(F("Wykryto przepełnienie millis()"));
+        lastMeasurement = currentMillis;  // Zaktualizuj wartość lastMeasurement
+        DEBUG_PRINT(F("Wykryto przepełnienie millis()"));  // Wydrukuj komunikat debugowania
     }
 }
 
@@ -256,7 +265,7 @@ void playShortWarningSound() {
     }
 }
 
-// Sygnał potwierdzenia
+// Długi sygnał dźwiękowy - pojedyncze piknięcie
 void playConfirmationSound() {
     if (config.soundEnabled) {
         tone(BUZZER_PIN, 2000, 200); // Dłuższe piknięcie (2000Hz, 200ms)
@@ -431,7 +440,7 @@ void setupWiFi() {
     WiFiManager wifiManager;
     
     // Konfiguracja AP
-    // Nazwa AP będzie "HydroSense-Setup"
+    // Nazwa AP: "HydroSense-Setup"
     // Hasło do AP: "hydrosense"
     
     wifiManager.setAPCallback([](WiFiManager *myWiFiManager) {
@@ -510,7 +519,7 @@ void setupHA() {
     
     // Konfiguracja przełączników w HA
     switchService.setName("Serwis");
-    switchService.setIcon("mdi:tools");            // Ikona narzędzi
+    switchService.setIcon("mdi:account-wrench-outline");            // Ikona narzędzi
     switchService.onCommand(onServiceSwitchCommand);// Funkcja obsługi zmiany stanu
     switchService.setState(status.isServiceMode);   // Stan początkowy
     // Inicjalizacja stanu - domyślnie wyłączony
@@ -531,16 +540,16 @@ void setupHA() {
 
 // Konfiguracja kierunków pinów i stanów początkowych
 void setupPin() {
-    pinMode(PIN_ULTRASONIC_TRIG, OUTPUT);          // Wyjście - trigger czujnika ultradźwiękowego
-    pinMode(PIN_ULTRASONIC_ECHO, INPUT);           // Wejście - echo czujnika ultradźwiękowego
+    pinMode(PIN_ULTRASONIC_TRIG, OUTPUT);  // Wyjście - trigger czujnika ultradźwiękowego
+    pinMode(PIN_ULTRASONIC_ECHO, INPUT);  // Wejście - echo czujnika ultradźwiękowego
     digitalWrite(PIN_ULTRASONIC_TRIG, LOW);  // Upewnij się że TRIG jest LOW na starcie
     
-    pinMode(PIN_WATER_LEVEL, INPUT_PULLUP);        // Wejście z podciąganiem - czujnik poziomu
-    pinMode(PRZYCISK_PIN, INPUT_PULLUP);             // Wejście z podciąganiem - przycisk
-    pinMode(BUZZER_PIN, OUTPUT);                   // Wyjście - buzzer
-    digitalWrite(BUZZER_PIN, LOW);                 // Wyłączenie buzzera
-    pinMode(POMPA_PIN, OUTPUT);                     // Wyjście - pompa
-    digitalWrite(POMPA_PIN, LOW);                   // Wyłączenie pompy
+    pinMode(PIN_WATER_LEVEL, INPUT_PULLUP);  // Wejście z podciąganiem - czujnik poziomu
+    pinMode(PRZYCISK_PIN, INPUT_PULLUP);  // Wejście z podciąganiem - przycisk
+    pinMode(BUZZER_PIN, OUTPUT);  // Wyjście - buzzer
+    digitalWrite(BUZZER_PIN, LOW);  // Wyłączenie buzzera
+    pinMode(POMPA_PIN, OUTPUT);  // Wyjście - pompa
+    digitalWrite(POMPA_PIN, LOW);  // Wyłączenie pompy
 }
 
 // Melodia powitalna
@@ -671,7 +680,7 @@ int measureDistance() {
         bool validEcho = true;
         while (digitalRead(PIN_ULTRASONIC_ECHO) == LOW) {
             if (micros() > timeout) {
-                DEBUG_PRINT(F("Echo start timeout"));
+                DEBUG_PRINT(F("Limit czasu rozpoczęcia echa"));
                 validEcho = false;
                 break;
             }
@@ -683,7 +692,7 @@ int measureDistance() {
             // Czekaj na koniec echa
             while (digitalRead(PIN_ULTRASONIC_ECHO) == HIGH) {
                 if (micros() > timeout) {
-                    DEBUG_PRINT(F("Echo end timeout"));
+                    DEBUG_PRINT(F("Limit czasu zakończenia echa"));
                     validEcho = false;
                     break;
                 }
@@ -698,7 +707,7 @@ int measureDistance() {
                     measurements[i] = distance;
                     validCount++;
                 } else {
-                    DEBUG_PRINT(F("Distance out of range: "));
+                    DEBUG_PRINT(F("Odległość poza zasięgiem: "));
                     DEBUG_PRINT(distance);
                 }
             }
@@ -708,7 +717,7 @@ int measureDistance() {
 
     // Sprawdź czy mamy wystarczająco dużo poprawnych pomiarów
     if (validCount < (SENSOR_AVG_SAMPLES / 2)) {
-        DEBUG_PRINT(F("Too few valid measurements: "));
+        DEBUG_PRINT(F("Za mało prawidłowych pomiarów: "));
         DEBUG_PRINT(validCount);
         return -1;
     }
@@ -768,7 +777,7 @@ int measureDistance() {
 //  
 // @param distance - zmierzona odległość od czujnika do lustra wody w mm
 // @return int - poziom wody w procentach (0-100%)
-// Wzór: ((EMPTY - distance) / (EMPTY - FULL)) * 100
+// Wzór: ((TANK_EMPTY - distance) / (TANK_EMPTY - TANK_FULL)) * 100
 int calculateWaterLevel(int distance) {
     // Ograniczenie wartości do zakresu pomiarowego
     if (distance < TANK_FULL) distance = TANK_FULL;  // Nie mniej niż przy pełnym
@@ -915,20 +924,17 @@ void onSoundSwitchCommand(bool state, HASwitch* sender) {
     DEBUG_PRINTF("Zmieniono stan dźwięku na: ", state ? "WŁĄCZONY" : "WYŁĄCZONY");
 }
 
-// --- Setup
+// --- SETUP ---
 void setup() {
     ESP.wdtEnable(WATCHDOG_TIMEOUT);  // Aktywacja watchdoga
     Serial.begin(115200);  // Inicjalizacja portu szeregowego
-    DEBUG_PRINT("\nStarting HydroSense...");  // Komunikat startowy
+    DEBUG_PRINT("\nHydroSense start...");  // Komunikat startowy
     
     // Wczytaj konfigurację
     if (!loadConfig()) {
         DEBUG_PRINT(F("Tworzenie nowej konfiguracji..."));
         setDefaultConfig();
     }
-    
-    // Zastosuj wczytane ustawienia
-    //status.soundEnabled = config.soundEnabled;
     
     setupPin();
     
@@ -949,100 +955,57 @@ void setup() {
     firstUpdateHA();
     status.lastSoundAlert = millis();
     
-    // Konfiguracja OTA (Over-The-Air) dla aktualizacji oprogramowania
+    // Konfiguracja OTA
     ArduinoOTA.setHostname("HydroSense");  // Ustaw nazwę urządzenia
     ArduinoOTA.setPassword("hydrosense");  // Ustaw hasło dla OTA
     ArduinoOTA.begin();  // Uruchom OTA    
     
     DEBUG_PRINT("Setup zakończony pomyślnie!");
-    
-    if (status.soundEnabled) {
-        welcomeMelody();
+
+    // Powitanie
+    if (status.soundEnabled) {  // Gdy jest włączony dzwięk
+        welcomeMelody();  //  to odegraj muzyczkę, że program poprawnie wystartował
     }  
 }
 
-// void loop() {
-//     unsigned long currentMillis = millis();
-
-//     // 1. KRYTYCZNE OPERACJE CZASOWE
-//     handleMillisOverflow();
-//     updatePump();           
-    
-//     // 2. PODSTAWOWE ZABEZPIECZENIA
-//     ESP.wdtFeed();
-//     yield();
-    
-//     // 3. OBSŁUGA WEJŚĆ I ALARMÓW
-//     handleButton();
-//     checkAlarmConditions();
-    
-//     // 4. POMIARY (co MEASUREMENT_INTERVAL)
-//     if (currentMillis - timers.lastMeasurement >= MEASUREMENT_INTERVAL) {
-//         updateWaterLevel();
-//         timers.lastMeasurement = currentMillis;
-//     }
-    
-//     // 5. KOMUNIKACJA MQTT (co 100ms)
-//     if (currentMillis - timers.lastMQTTLoop >= 100) {
-//         mqtt.loop();
-//         timers.lastMQTTLoop = currentMillis;
-//     }
-    
-//     // 6. OBSŁUGA OTA (co 1 sekundę)
-//     if (currentMillis - timers.lastOTACheck >= 1000) {
-//         ArduinoOTA.handle();
-//         timers.lastOTACheck = currentMillis;
-//     }
-    
-//     // 7. ZARZĄDZANIE POŁĄCZENIEM MQTT (co 10 sekund)
-//     if (!mqtt.isConnected()) {
-//         if (currentMillis - timers.lastMQTTRetry >= 10000) {
-//             timers.lastMQTTRetry = currentMillis;
-//             DEBUG_PRINT(F("Brak połączenia MQTT - próba reconnect..."));
-//             if (mqtt.begin(MQTT_SERVER, 1883, MQTT_USER, MQTT_PASSWORD)) {
-//                 DEBUG_PRINT(F("MQTT połączono ponownie!"));
-//             }
-//         }
-//     }
-// }
-
+// --- LOOP ---
 void loop() {
-    unsigned long currentMillis = millis();
+    unsigned long currentMillis = millis();  // Pobierz bieżącą wartość millis()
 
-    // 1. KRYTYCZNE OPERACJE CZASOWE (zawsze)
-    handleMillisOverflow();  // Musi być pierwsze!
-    updatePump();
-    ESP.wdtFeed();
-    yield();
-    
-    // 2. BEZPOŚREDNIA INTERAKCJA (zawsze)
-    handleButton();
-    checkAlarmConditions();
-    
-    // 3. POMIARY I AKTUALIZACJE (z interwałem)
+    // KRYTYCZNE OPERACJE CZASOWE
+    handleMillisOverflow();  // Obsługa przepełnienia millis()
+    updatePump();  // Aktualizacja stanu pompy
+    ESP.wdtFeed();  // Reset watchdog timer ESP
+    yield();  // Umożliwienie przetwarzania innych zadań
+
+    // BEZPOŚREDNIA INTERAKCJA
+    handleButton();  // Obsługa naciśnięcia przycisku
+    checkAlarmConditions();  // Sprawdzenie warunków alarmowych
+
+    // POMIARY I AKTUALIZACJE
     if (currentMillis - timers.lastMeasurement >= MEASUREMENT_INTERVAL) {
-        updateWaterLevel();
-        timers.lastMeasurement = currentMillis;
+        updateWaterLevel();  // Aktualizacja poziomu wody
+        timers.lastMeasurement = currentMillis;  // Aktualizacja znacznika czasu ostatniego pomiaru
     }
-    
-    // 4. KOMUNIKACJA (z różnymi interwałami)
+
+    // KOMUNIKACJA
     if (currentMillis - timers.lastMQTTLoop >= MQTT_LOOP_INTERVAL) {
-        mqtt.loop();
-        timers.lastMQTTLoop = currentMillis;
+        mqtt.loop();  // Obsługa pętli MQTT
+        timers.lastMQTTLoop = currentMillis;  // Aktualizacja znacznika czasu ostatniej pętli MQTT
     }
-    
+
     if (currentMillis - timers.lastOTACheck >= OTA_CHECK_INTERVAL) {
-        ArduinoOTA.handle();
-        timers.lastOTACheck = currentMillis;
+        ArduinoOTA.handle();  // Obsługa aktualizacji OTA
+        timers.lastOTACheck = currentMillis;  // Aktualizacja znacznika czasu ostatniego sprawdzenia OTA
     }
-    
-    // 5. ZARZĄDZANIE POŁĄCZENIEM (gdy potrzebne)
+
+    // ZARZĄDZANIE POŁĄCZENIEM
     if (!mqtt.isConnected() && 
         (currentMillis - timers.lastMQTTRetry >= MQTT_RETRY_INTERVAL)) {
-        timers.lastMQTTRetry = currentMillis;
-        DEBUG_PRINT(F("Brak połączenia MQTT - próba reconnect..."));
+        timers.lastMQTTRetry = currentMillis;  // Aktualizacja znacznika czasu ostatniej próby połączenia MQTT
+        DEBUG_PRINT(F("Brak połączenia MQTT - próba połączenia..."));  // Wydrukuj komunikat debugowania
         if (mqtt.begin(MQTT_SERVER, 1883, MQTT_USER, MQTT_PASSWORD)) {
-            DEBUG_PRINT(F("MQTT połączono ponownie!"));
+            DEBUG_PRINT(F("MQTT połączono ponownie!"));  // Wydrukuj komunikat debugowania
         }
     }
 }
