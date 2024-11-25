@@ -6,14 +6,17 @@
 #include <ESP8266WiFi.h>  // Biblioteka WiFi dedykowana dla układu ESP8266
 #include <EEPROM.h>  // Biblioteka do dostępu do pamięci nieulotnej EEPROM
 #include <WiFiManager.h>  // Biblioteka do zarządzania połączeniami WiFi
-#include <ESP8266WebServer.h>
+#include <ESP8266WebServer.h>  // Biblioteka do obsługi serwera HTTP na ESP8266
+#include <WebSocketsServer.h>  // Biblioteka do obsługi serwera WebSockets na ESP8266
+#include <ESP8266HTTPUpdateServer.h>
 
 // --- Definicje stałych i zmiennych globalnych
 
-ESP8266WebServer server(80);
+ESP8266WebServer server(80);  // Tworzenie instancji serwera HTTP na porcie 80
+WebSocketsServer webSocket = WebSocketsServer(81);  // Tworzenie instancji serwera WebSockets na porcie 81
 
 // Wersja systemu
-const char* SOFTWARE_VERSION = "22.11.24";
+const char* SOFTWARE_VERSION = "23.11.24";  // Definiowanie wersji oprogramowania
 
 // Konfiguracja pinów ESP8266
 const int PIN_ULTRASONIC_TRIG = D6;  // Pin TRIG czujnika ultradźwiękowego
@@ -27,22 +30,44 @@ const int PRZYCISK_PIN = D3;  // Pin przycisku do kasowania alarmów
 // Stałe czasowe (wszystkie wartości w milisekundach)
 const unsigned long ULTRASONIC_TIMEOUT = 50;  // Timeout pomiaru czujnika ultradźwiękowego
 const unsigned long MEASUREMENT_INTERVAL = 60000;  // Interwał między pomiarami
-const unsigned long WIFI_CHECK_INTERVAL = 5000;  // Interwał sprawdzania połączenia WiFi
 const unsigned long WATCHDOG_TIMEOUT = 8000;  // Timeout dla watchdoga
-const unsigned long SENSOR_READ_INTERVAL = 5000;  // Częstotliwość odczytu czujnika
-const unsigned long WIFI_RETRY_INTERVAL = 10000;  // Interwał prób połączenia WiFi
-const unsigned long BUTTON_DEBOUNCE_TIME = 50;  // Czas debouncingu przycisku
 const unsigned long LONG_PRESS_TIME = 1000;  // Czas długiego naciśnięcia przycisku
-const unsigned long SOUND_ALERT_INTERVAL = 60000;  // Interwał między sygnałami dźwiękowymi
 const unsigned long MQTT_LOOP_INTERVAL = 100;  // Obsługa MQTT co 100ms
 const unsigned long OTA_CHECK_INTERVAL = 1000;  // Sprawdzanie OTA co 1s
 const unsigned long MQTT_RETRY_INTERVAL = 10000;  // Próba połączenia MQTT co 10s
 
-// Konfiguracja EEPROM
-#define EEPROM_SOUND_STATE_ADDR 0    // Adres przechowywania stanu dźwięku
+const char UPDATE_FORM[] PROGMEM = R"rawliteral(
+<div class='section'>
+    <h2>Aktualizacja firmware</h2>
+    <form method='POST' action='/update' enctype='multipart/form-data'>
+        <table class='config-table' style='margin-bottom: 15px;'>
+            <tr><td colspan='2'><input type='file' name='update' accept='.bin'></td></tr>
+        </table>
+        <input type='submit' value='Aktualizuj firmware' class='btn btn-orange'>
+    </form>
+    <div id='update-progress' style='display:none'>
+        <div class='progress'>
+            <div id='progress-bar' class='progress-bar' role='progressbar' style='width: 0%'>0%</div>
+        </div>
+    </div>
+</div>
+)rawliteral";
+
+const char PAGE_FOOTER[] PROGMEM = R"rawliteral(
+<div class='footer'>
+    <a href='https://github.com/pimowo/HydroSense' target='_blank'>Project by PMW</a>
+</div>
+)rawliteral";
+
+const char CONSOLE_SECTION[] PROGMEM = R"rawliteral(
+<div class="section">
+    <h2>Konsola</h2>
+    <div id="console" class="console"></div>
+</div>
+)rawliteral";
 
 // Definicja debugowania
-#define DEBUG 0  // 0 wyłącza debug, 1 włącza debug
+#define DEBUG 1  // 0 wyłącza debug, 1 włącza debug
 
 #if DEBUG
     #define DEBUG_PRINT(x) Serial.println(x)
@@ -63,9 +88,7 @@ const int SENSOR_AVG_SAMPLES = 3;  // Liczba próbek do uśrednienia pomiaru
 
 // Zmienne globalne
 float lastFilteredDistance = 0;  // Dla filtra EMA (Exponential Moving Average)
-float aktualnaOdleglosc = 0;  // Aktualny dystans
 float lastReportedDistance = 0;
-unsigned long ostatniCzasDebounce = 0;  // Ostatni czas zmiany stanu przycisku
 unsigned long lastMeasurement = 0;
 const unsigned long MILLIS_OVERFLOW_THRESHOLD = 4294967295U - 60000; // ~49.7 dni
 
@@ -99,8 +122,7 @@ struct Config {
     char checksum;       // XOR wszystkich poprzednich pól
 };
 
-// Globalna instancja struktury konfiguracyjnej
-Config config;
+Config config;  // Globalna instancja struktury konfiguracyjnej
 
 const uint8_t CONFIG_VERSION = 2;  // Wersja konfiguracji
 const int EEPROM_SIZE = sizeof(Config);  // Rozmiar używanej pamięci EEPROM   
@@ -164,16 +186,7 @@ struct ButtonState {
     unsigned long releasedTime = 0;  // Czas puszczenia przycisku
 };
 
-// Instancja struktury ButtonState
-ButtonState buttonState;
-
-// Struktura dla dźwięków alarmowych
-// struct AlarmTone {
-//     uint8_t repeats;  // Liczba powtórzeń
-//     uint16_t frequency;  // Częstotliwość dźwięku
-//     uint16_t duration;  // Czas trwania
-//     uint16_t pauseDuration;  // Przerwa między powtórzeniami
-// };
+ButtonState buttonState;  // Instancja struktury ButtonState
 
 // Struktura do przechowywania różnych znaczników czasowych
 struct Timers {
@@ -186,8 +199,42 @@ struct Timers {
     Timers() : lastMQTTRetry(0), lastMeasurement(0), lastOTACheck(0), lastMQTTLoop(0) {}
 };
 
-// Instancja struktury Timers
-static Timers timers;
+static Timers timers;  // Instancja struktury Timers
+
+class WebSerial : public Stream {
+private:
+    String buffer;
+    
+public:
+    WebSerial() {}
+    
+    size_t write(uint8_t data) override {
+        if (data == '\n') {
+            if (buffer.length() > 0) {
+                webSocket.broadcastTXT(buffer);
+                buffer = "";
+            }
+        } else {
+            buffer += (char)data;
+        }
+        Serial.write(data); // Wysyłaj również na standardowy port szeregowy
+        return 1;
+    }
+    
+    size_t write(const uint8_t *buffer, size_t size) override {
+        for(size_t i = 0; i < size; i++) {
+            write(buffer[i]);
+        }
+        return size;
+    }
+    
+    int available() override { return Serial.available(); }
+    int read() override { return Serial.read(); }
+    int peek() override { return Serial.peek(); }
+    void flush() override { Serial.flush(); }
+};
+
+WebSerial webSerial;
 
 // Funkcja do resetowania do ustawień fabrycznych
 void factoryReset() {    
@@ -287,10 +334,10 @@ bool loadConfig() {
     if (calculatedChecksum == tempConfig.checksum) {
         // Jeśli suma kontrolna się zgadza, skopiuj dane do głównej struktury config
         memcpy(&config, &tempConfig, sizeof(Config));
-        Serial.println("Konfiguracja wczytana pomyślnie");
+        webSerial.println("Konfiguracja wczytana pomyślnie");
         return true;
     } else {
-        Serial.println("Błąd sumy kontrolnej - ładowanie ustawień domyślnych");
+        webSerial.println("Błąd sumy kontrolnej - ładowanie ustawień domyślnych");
         setDefaultConfig();
         return false;
     }
@@ -314,9 +361,9 @@ void saveConfig() {
     EEPROM.end();
     
     if (success) {
-        Serial.println("Konfiguracja zapisana pomyślnie");
+        webSerial.println("Konfiguracja zapisana pomyślnie");
     } else {
-        Serial.println("Błąd zapisu konfiguracji!");
+        webSerial.println("Błąd zapisu konfiguracji!");
     }
 }
 
@@ -405,99 +452,6 @@ void updateAlarmStates(float currentDistance) {
 }
 
 // --- Deklaracje funkcji pompy
-
-// Kontrola pompy - funkcja zarządzająca pracą pompy i jej zabezpieczeniami
-// void updatePump() {
-//     // Zabezpieczenie przed przepełnieniem licznika millis()
-//     if (millis() < status.pumpStartTime) {
-//         status.pumpStartTime = millis();
-//     }
-    
-//     if (millis() < status.pumpDelayStartTime) {
-//         status.pumpDelayStartTime = millis();
-//     }
-    
-//     // Odczyt stanu czujnika poziomu wody
-//     // LOW = brak wody - należy uzupełnić
-//     // HIGH = woda obecna - stan normalny
-//     bool waterPresent = (digitalRead(PIN_WATER_LEVEL) == LOW);
-//     sensorWater.setValue(waterPresent ? "ON" : "OFF");
-    
-//     // --- ZABEZPIECZENIE 1: Tryb serwisowy ---
-//     if (status.isServiceMode) {
-//         if (status.isPumpActive) {
-//             digitalWrite(POMPA_PIN, LOW);
-//             status.isPumpActive = false;
-//             status.pumpStartTime = 0;
-//             sensorPump.setValue("OFF");
-//         }
-//         return;
-//     }
-
-//     // --- ZABEZPIECZENIE 2: Maksymalny czas pracy ---
-//     if (status.isPumpActive && (millis() - status.pumpStartTime > config.pump_work_time * 1000)) {
-//         digitalWrite(POMPA_PIN, LOW);
-//         status.isPumpActive = false;
-//         status.pumpStartTime = 0;
-//         sensorPump.setValue("OFF");
-//         status.pumpSafetyLock = true;
-//         switchPumpAlarm.setState(true);
-//         Serial.println("ALARM: Pompa pracowała za długo - aktywowano blokadę bezpieczeństwa!");
-//         return;
-//     }
-    
-//     // --- ZABEZPIECZENIE 3: Blokady bezpieczeństwa ---
-//     if (status.pumpSafetyLock || status.waterAlarmActive) {
-//         if (status.isPumpActive) {
-//             digitalWrite(POMPA_PIN, LOW);
-//             status.isPumpActive = false;
-//             status.pumpStartTime = 0;
-//             sensorPump.setValue("OFF");
-//         }
-//         return;
-//     }
-    
-//     // Kontrola poziomu wody w zbiorniku
-//     float currentDistance = measureDistance();
-//     if (status.isPumpActive && currentDistance >= config.tank_empty) {
-//         digitalWrite(POMPA_PIN, LOW);
-//         status.isPumpActive = false;
-//         status.pumpStartTime = 0;
-//         status.isPumpDelayActive = false;
-//         sensorPump.setValue("OFF");
-//         switchPumpAlarm.setState(true);  // Włącz alarm pompy
-//         DEBUG_PRINT(F("ALARM: Zatrzymano pompę - brak wody w zbiorniku!"));
-//         return;
-//     }
-
-//     // --- ZABEZPIECZENIE 4: Ochrona przed przepełnieniem ---
-//     if (!waterPresent && status.isPumpActive) {
-//         digitalWrite(POMPA_PIN, LOW);
-//         status.isPumpActive = false;
-//         status.pumpStartTime = 0;
-//         status.isPumpDelayActive = false;
-//         sensorPump.setValue("OFF");
-//         return;
-//     }
-    
-//     // --- LOGIKA WŁĄCZANIA POMPY ---
-//     if (waterPresent && !status.isPumpActive && !status.isPumpDelayActive) {
-//         status.isPumpDelayActive = true;
-//         status.pumpDelayStartTime = millis();
-//         return;
-//     }
-    
-//     // Po upływie opóźnienia, włącz pompę
-//     if (status.isPumpDelayActive && !status.isPumpActive) {
-//         if (millis() - status.pumpDelayStartTime >= (config.pump_delay * 1000)) {
-//             digitalWrite(POMPA_PIN, HIGH);
-//             status.isPumpActive = true;
-//             status.pumpStartTime = millis();
-//             status.isPumpDelayActive = false;
-//             sensorPump.setValue("ON");
-//         }
-//     }
-// }
 
 void updatePump() {
     // Funkcja pomocnicza do wysłania całkowitego czasu pracy
@@ -645,18 +599,14 @@ void resetWiFiSettings() {
 // Konfiguracja i zarządzanie połączeniem WiFi
 void setupWiFi() {
     WiFiManager wifiManager;
-    
-    // Konfiguracja AP
-    // Nazwa AP: "HydroSense-Setup"
-    // Hasło do AP: "hydrosense"
-    
+       
     wifiManager.setAPCallback([](WiFiManager *myWiFiManager) {
         DEBUG_PRINT("Tryb punktu dostępowego");
         DEBUG_PRINT("SSID: HydroSense");
         DEBUG_PRINT("IP: 192.168.4.1");
-        if (status.soundEnabled) {
-            tone(BUZZER_PIN, 1000, 1000); // Sygnał dźwiękowy informujący o trybie AP
-        }
+        // if (status.soundEnabled) {
+        //     tone(BUZZER_PIN, 1000, 1000); // Sygnał dźwiękowy informujący o trybie AP
+        // }
     });
     
     wifiManager.setConfigPortalTimeout(180); // 3 minuty na konfigurację
@@ -1142,13 +1092,14 @@ void onSoundSwitchCommand(bool state, HASwitch* sender) {
     DEBUG_PRINTF("Zmieniono stan dźwięku na: ", state ? "WŁĄCZONY" : "WYŁĄCZONY");
 }
 
-// Strona www
+// Strona www   
 const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
 <html>
 <head>
     <meta charset='UTF-8'>
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HydroSense</title>
     <style>
         body { 
             font-family: Arial, sans-serif; 
@@ -1157,52 +1108,97 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
             background-color: #1a1a1a;
             color: #ffffff;
         }
+
+        .buttons-container {
+            display: flex;
+            justify-content: space-between;
+            margin: -5px;
+        }
+
         .container { 
             max-width: 800px; 
             margin: 0 auto; 
             padding: 0 15px;
         }
-        .section { 
-            background-color: #2d2d2d; 
-            padding: 20px; 
-            margin-bottom: 20px; 
+
+        .section {
+            background-color: #2a2a2a;
+            padding: 20px;
+            margin-bottom: 20px;
             border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+            width: 100%;
+            box-sizing: border-box;
         }
+
         h1 { 
             color: #ffffff; 
             text-align: center;
             margin-bottom: 30px;
             font-size: 2.5em;
-            background-color: #2d2d2d; /* Dodane - taki sam kolor jak w .section */
-            padding: 20px; /* Dodane - taki sam padding jak w .section */
-            border-radius: 8px; /* Dodane - takie samo zaokrąglenie jak w .section */
-            box-shadow: 0 2px 4px rgba(0,0,0,0.2); /* Dodane - taki sam cień jak w .section */
+            background-color: #2d2d2d;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
         }
+
         h2 { 
-            color: #2196F3; /* Google Blue */ 
+            color: #2196F3;
             margin-top: 0;
             font-size: 1.5em;
         }
+
         table { 
             width: 100%; 
             border-collapse: collapse;
         }
+
         td { 
             padding: 12px 8px;
             border-bottom: 1px solid #3d3d3d;
         }
-        input[type="text"], 
-        input[type="password"], 
-        input[type="number"] { 
+
+        .config-table td {
+            padding: 8px;
+        }
+
+        .config-table {
             width: 100%;
-            max-width: 200px;
-            padding: 8px; 
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .config-table td:first-child {
+            width: 65%;
+        }
+
+        .config-table td:last-child {
+            width: 35%;
+        }
+        .config-table input[type="text"],
+        .config-table input[type="password"],
+        .config-table input[type="number"] {
+            width: 100%;
+            padding: 8px;
             border: 1px solid #3d3d3d;
             border-radius: 4px;
             background-color: #1a1a1a;
             color: #ffffff;
+            box-sizing: border-box;
         }
+
+        input[type="text"],
+        input[type="password"],
+        input[type="number"] {
+            width: 100%;
+            padding: 8px;
+            border: 1px solid #3d3d3d;
+            border-radius: 4px;
+            background-color: #1a1a1a;
+            color: #ffffff;
+            box-sizing: border-box;
+            text-align: left;
+        }
+
         input[type="submit"] { 
             background-color: #4CAF50; 
             color: white; 
@@ -1213,63 +1209,177 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
             width: 100%;
             font-size: 16px;
         }
+
         input[type="submit"]:hover { 
             background-color: #45a049; 
         }
+
+        input[type="file"] {
+            background-color: #1a1a1a;
+            color: #ffffff;
+            padding: 8px;
+            border: 1px solid #3d3d3d;
+            border-radius: 4px;
+            width: 100%;
+            cursor: pointer;
+        }
+
+        input[type="file"]::-webkit-file-upload-button {
+            background-color: #2196F3;
+            color: white;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+        }
+
+        input[type="file"]::-webkit-file-upload-button:hover {
+            background-color: #1976D2;
+        }
+
         .success { 
             color: #4CAF50; 
         }
+
         .error { 
-            color: #F44336; /* Google Red */
+            color: #F44336;
         }
+
         .alert { 
             padding: 15px; 
             margin-bottom: 20px; 
-            border-radius: 0; /* Usunięte zaokrąglenie */
-            position: fixed; /* Pozycjonowanie stałe */
-            top: 0; /* Przyczepione do samej góry */
-            left: 0; /* Od lewej krawędzi */
-            right: 0; /* Do prawej krawędzi */
-            width: 100%; /* Pełna szerokość */
-            z-index: 1000; /* Zawsze na wierzchu */
-            text-align: center; /* Wycentrowany tekst */
-            animation: fadeOut 0.5s ease-in-out 5s forwards; /* Znikanie po 5 sekundach */
+            border-radius: 0;
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            width: 100%;
+            z-index: 1000;
+            text-align: center;
+            animation: fadeOut 0.5s ease-in-out 5s forwards;
         }
         .alert.success { 
-            background-color: #4CAF50; /* Zielony kolor Google */
+            background-color: #4CAF50;
             color: white;
             border: none;
             box-shadow: 0 2px 5px rgba(0,0,0,0.2);
         }
-        .btn { 
-            padding: 12px 24px; 
-            border: none; 
-            border-radius: 4px; 
-            cursor: pointer; 
-            margin: 5px 0;  /* Zmienione z margin: 5px */
+
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
             font-size: 14px;
-            width: 100%;    /* Zmienione z calc(50% - 10px) */
+            width: calc(50% - 10px);
+            display: inline-block;
+            margin: 5px;
+            text-align: center;
         }
+
         .btn-blue { 
-            background-color: #2196F3; /* Google Blue */
+            background-color: #2196F3;
             color: white; 
         }
+
         .btn-red { 
-            background-color: #F44336; /* Google Red */
+            background-color: #F44336;
             color: white; 
         }
+
+        .btn-orange {
+            background-color: #FF9800 !important;
+            color: white !important;
+        }
+
+        .btn-orange:hover {
+            background-color: #F57C00 !important;
+        }
+
+        .console {
+            background-color: #1a1a1a;
+            color: #ffffff;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: monospace;
+            height: 200px;
+            overflow-y: auto;
+            margin-top: 10px;
+            border: 1px solid #3d3d3d;
+        }
+
+        .footer {
+            background-color: #2d2d2d;
+            padding: 20px;
+            margin-top: 20px;
+            border-radius: 8px;
+            text-align: center;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+        }
+
+        .footer a {
+            display: inline-block;
+            background-color: #2196F3;
+            color: white;
+            text-decoration: underline;
+            padding: 12px 24px;
+            border-radius: 4px;
+            font-weight: normal;
+            transition: background-color 0.3s;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        .footer a:hover {
+            background-color: #1976D2;
+        }
+
+        .progress {
+            width: 100%;
+            background-color: #1a1a1a;
+            border: 1px solid #3d3d3d;
+            border-radius: 4px;
+            padding: 3px;
+            margin-top: 15px;
+        }
+        .progress-bar {
+            width: 0%;
+            height: 20px;
+            background-color: #4CAF50;
+            border-radius: 2px;
+            transition: width 0.3s ease-in-out;
+            text-align: center;
+            color: white;
+            line-height: 20px;
+        }
+
+        .message {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            padding: 15px 30px;
+            border-radius: 5px;
+            color: white;
+            opacity: 0;
+            transition: opacity 0.3s ease-in-out;
+            z-index: 1000;
+        }
+
+        .message.success {
+            background-color: #4CAF50;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
+        .message.error {
+            background-color: #f44336;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.2);
+        }
+
         @media (max-width: 600px) {
             body {
                 padding: 10px;
-            }
-            .status-table {
-                display: table !important;
-                width: 100%;
-            }
-            .status-table td {
-                display: table-cell !important; /* Wymusza wyświetlanie w linii */
-                width: auto !important; /* Automatyczna szerokość */
-                padding: 8px 16px 8px 0 !important; /* Padding z prawej strony */
             }
             .container {
                 padding: 0;
@@ -1277,221 +1387,253 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
             .section {
                 padding: 15px;
                 margin-bottom: 15px;
-                background-color: #303030; /* Google Dark Grey */
             }
-            td {
-                display: block;
-                padding: 8px 0;
+            .console {
+                height: 150px;
             }
-            input[type="text"],
-            input[type="password"],
-            input[type="number"] {
-                max-width: none;  /* usuwa poprzednie ograniczenie */
-                width: 100%;      /* ustawia pełną szerokość */
-                box-sizing: border-box; /* zapewnia, że padding nie zwiększa szerokości */
-                border: 1px solid #424242; /* Google Dark Grey */
-            }
-            .btn {
-                width: 100%;
-                margin: 5px 0;
-            }
-        }
-        @keyframes fadeOut {
-            from {opacity: 1;}
-            to {opacity: 0; visibility: hidden;}
         }
     </style>
     <script>
-    function confirmReset() {
-        return confirm('Czy na pewno chcesz przywrócić ustawienia fabryczne? Spowoduje to utratę wszystkich ustawień.');
-    }
-    function rebootDevice() {
-        if(confirm('Czy na pewno chcesz zrestartować urządzenie?')) {
-            fetch('/reboot', {method: 'POST'}).then(() => {
-                alert('Urządzenie zostanie zrestartowane...');
-                setTimeout(() => { window.location.reload(); }, 3000);
-            });
+        function confirmReset() {
+            return confirm('Czy na pewno chcesz przywrócić ustawienia fabryczne? Spowoduje to utratę wszystkich ustawień.');
         }
-    }
-    function factoryReset() {
-        if(confirmReset()) {
-            fetch('/factory-reset', {method: 'POST'}).then(() => {
-                alert('Przywracanie ustawień fabrycznych...');
-                setTimeout(() => { window.location.reload(); }, 3000);
-            });
+
+        function rebootDevice() {
+            if(confirm('Czy na pewno chcesz zrestartować urządzenie?')) {
+                fetch('/reboot', {method: 'POST'}).then(() => {
+                    showMessage('Urządzenie zostanie zrestartowane...', 'success');
+                    setTimeout(() => { window.location.reload(); }, 3000);
+                });
+            }
         }
-    }
+
+        function factoryReset() {
+            if(confirmReset()) {
+                fetch('/factory-reset', {method: 'POST'}).then(() => {
+                    showMessage('Przywracanie ustawień fabrycznych...', 'success');
+                    setTimeout(() => { window.location.reload(); }, 3000);
+                });
+            }
+        }
+        function showMessage(text, type) {
+            var oldMessages = document.querySelectorAll('.message');
+            oldMessages.forEach(function(msg) {
+                msg.remove();
+            });
+            
+            var messageBox = document.createElement('div');
+            messageBox.className = 'message ' + type;
+            messageBox.innerHTML = text;
+            document.body.appendChild(messageBox);
+            
+            setTimeout(function() {
+                messageBox.style.opacity = '1';
+            }, 10);
+            
+            setTimeout(function() {
+                messageBox.style.opacity = '0';
+                setTimeout(function() {
+                    messageBox.remove();
+                }, 300);
+            }, 3000);
+        }
+
+        var socket;
+        window.onload = function() {
+            document.querySelector('form[action="/save"]').addEventListener('submit', function(e) {
+                e.preventDefault();
+                
+                var formData = new FormData(this);
+                fetch('/save', {
+                    method: 'POST',
+                    body: formData
+                }).then(response => {
+                    if (!response.ok) {
+                        throw new Error('Network response was not ok');
+                    }
+                }).catch(error => {
+                    showMessage('Błąd podczas zapisywania!', 'error');
+                });
+            });
+
+            socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+            socket.onmessage = function(event) {
+                var message = event.data;
+                
+                if (message.startsWith('update:')) {
+                    if (message.startsWith('update:error:')) {
+                        document.getElementById('update-progress').style.display = 'none';
+                        showMessage(message.split(':')[2], 'error');
+                        return;
+                    }
+                    var percentage = message.split(':')[1];
+                    document.getElementById('update-progress').style.display = 'block';
+                    document.getElementById('progress-bar').style.width = percentage + '%';
+                    document.getElementById('progress-bar').textContent = percentage + '%';
+                    
+                    if (percentage == '100') {
+                        document.getElementById('update-progress').style.display = 'none';
+                        showMessage('Aktualizacja zakończona pomyślnie! Trwa restart urządzenia...', 'success');
+                        setTimeout(function() {
+                            window.location.reload();
+                        }, 3000);
+                    }
+                } 
+                else if (message.startsWith('save:')) {
+                    var parts = message.split(':');
+                    var type = parts[1];
+                    var text = parts[2];
+                    showMessage(text, type);
+                }
+                else {
+                    var console = document.getElementById('console');
+                    console.innerHTML += message + '<br>';
+                    console.scrollTop = console.scrollHeight;
+                }
+            };
+        };
     </script>
-    <title>HydroSense</title>
 </head>
 <body>
-    <div class="container">
-        <h1>HydroSense</h1>
-        %MESSAGE%
-        
-        <!-- Status systemu -->
-        <div class="section">
-            <h2>Status systemu</h2>
-            <table class="status-table">
-                <tr>
-                    <td>Status MQTT</td>
-                    <td class="%MQTT_STATUS_CLASS%">%MQTT_STATUS%</td>
-                </tr>
-                <tr>
-                    <td>Status dźwięku</td>
-                    <td class="%SOUND_STATUS_CLASS%">%SOUND_STATUS%</td>
-                </tr>
-                <tr>
-                    <td>Wersja oprogramowania</td>
-                    <td>%SOFTWARE_VERSION%</td>
-                </tr>
-            </table>
-        </div>
-
-        %BUTTONS%
-
-        <form method="POST" action="/save">
-            <!-- Ustawienia MQTT -->
-            <div class="section">
-                <h2>Konfiguracja MQTT</h2>
-                <table>
-                    <tr>
-                        <td>Serwer</td>
-                        <td><input type="text" name="mqtt_server" value="%MQTT_SERVER%"></td>
-                    </tr>
-                    <tr>
-                        <td>Port</td>
-                        <td><input type="number" name="mqtt_port" value="%MQTT_PORT%"></td>
-                    </tr>
-                    <tr>
-                        <td>Użytkownik</td>
-                        <td><input type="text" name="mqtt_user" value="%MQTT_USER%"></td>
-                    </tr>
-                    <tr>
-                        <td>Hasło</td>
-                        <td><input type="password" name="mqtt_password" value="%MQTT_PASSWORD%"></td>
-                    </tr>
-                </table>
-            </div>
-
-            <!-- Ustawienia zbiornika -->
-            <div class="section">
-                <h2>Ustawienia zbiornika</h2>
-                <table>
-                    <tr>
-                        <td>Odległość przy pustym [mm]</td>
-                        <td><input type="number" name="tank_empty" value="%TANK_EMPTY%"></td>
-                    </tr>
-                    <tr>
-                        <td>Odległość przy pełnym [mm]</td>
-                        <td><input type="number" name="tank_full" value="%TANK_FULL%"></td>
-                    </tr>
-                    <tr>
-                        <td>Odległość przy rezerwie [mm]</td>
-                        <td><input type="number" name="reserve_level" value="%RESERVE_LEVEL%"></td>
-                    </tr>
-                    <tr>
-                        <td>Średnica zbiornika [mm]</td>
-                        <td><input type="number" name="tank_diameter" value="%TANK_DIAMETER%"></td>
-                    </tr>
-                </table>
-            </div>
-
-            <!-- Ustawienia pompy -->
-            <div class="section">
-                <h2>Ustawienia pompy</h2>
-                <table>
-                    <tr>
-                        <td>Opóźnienie załączenia pompy [s]</td>
-                        <td><input type="number" name="pump_delay" value="%PUMP_DELAY%"></td>
-                    </tr>
-                    <tr>
-                        <td>Czas pracy pompy [s]</td>
-                        <td><input type="number" name="pump_work_time" value="%PUMP_WORK_TIME%"></td>
-                    </tr>
-                </table>
-            </div>
-            <div class="section">
-                <input type="submit" value="Zapisz ustawienia">
-            </div>
-        </form>
+    <h1>HydroSense</h1>
+    
+    <div class='section'>
+        <h2>Status systemu</h2>
+        <table class='config-table'>
+            <tr>
+                <td>Status MQTT</td>
+                <td><span class='status %MQTT_STATUS_CLASS%'>%MQTT_STATUS%</span></td>
+            </tr>
+            <tr>
+                <td>Status dźwięku</td>
+                <td><span class='status %SOUND_STATUS_CLASS%'>%SOUND_STATUS%</span></td>
+            </tr>
+            <tr>
+                <td>Wersja oprogramowania</td>
+                <td>%SOFTWARE_VERSION%</td>
+            </tr>
+        </table>
     </div>
+
+    %BUTTONS%
+    %CONFIG_FORMS%
+    %UPDATE_FORM%
+    %CONSOLE_SECTION%
+    %FOOTER%
 </body>
 </html>
 )rawliteral";
 
-// Obsługa strony www
 String getConfigPage() {
     String html = FPSTR(CONFIG_PAGE);
     
-    // Dodaj skrypt JavaScript do obsługi komunikatu
-    String script = F("<script>"
-                     "window.onload = function() {"
-                     "  const urlParams = new URLSearchParams(window.location.search);"
-                     "  if (urlParams.has('success')) {"
-                     "    const alertDiv = document.createElement('div');"
-                     "    alertDiv.className = 'alert success';"
-                     "    alertDiv.textContent = 'Konfiguracja została zapisana pomyślnie!';"
-                     "    document.body.insertBefore(alertDiv, document.body.firstChild);"
-                     "    window.history.replaceState({}, '', window.location.pathname);"
-                     "  }"
-                     "};"
-                     "</script>");
+    // Przygotuj wszystkie wartości przed zastąpieniem
+    bool mqttConnected = client.connected();
+    String mqttStatus = mqttConnected ? "Połączony" : "Rozłączony";
+    String mqttStatusClass = mqttConnected ? "success" : "error";
+    String soundStatus = config.soundEnabled ? "Włączony" : "Wyłączony";
+    String soundStatusClass = config.soundEnabled ? "success" : "error";
     
-    // Dodaj skrypt przed zamknięciem </head>
-    html.replace("</head>", script + "</head>");
-    
-    // Status systemu
-    bool mqttConnected = mqtt.isConnected();
-    html.replace("%MQTT_STATUS%", mqttConnected ? "Połączony" : "Rozłączony");
-    html.replace("%MQTT_STATUS_CLASS%", mqttConnected ? "success" : "error");
-    
-    html.replace("%SOUND_STATUS%", config.soundEnabled ? "Włączony" : "Wyłączony");
-    html.replace("%SOUND_STATUS_CLASS%", config.soundEnabled ? "success" : "error");
-    
-    html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
+    // Sekcja przycisków - zmieniona na String zamiast PROGMEM
+    String buttons = F(
+        "<div class='section'>"
+        "<div class='buttons-container'>"
+        "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
+        "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
+        "</div>"
+        "</div>"
+    );
 
-    // Sekcja przycisków
-    String buttons = F("<div class='section'>"
-                      "<button class='btn btn-blue' onclick='rebootDevice()'>Reboot</button>"
-                      "<button class='btn btn-red' onclick='factoryReset()'>Ustawienia fabryczne</button>"
-                      "</div>");
-    html.replace("%BUTTONS%", buttons);
-
-    // Ustawienia MQTT
+    // Zastąp wszystkie placeholdery
     html.replace("%MQTT_SERVER%", config.mqtt_server);
     html.replace("%MQTT_PORT%", String(config.mqtt_port));
     html.replace("%MQTT_USER%", config.mqtt_user);
     html.replace("%MQTT_PASSWORD%", config.mqtt_password);
-    
-    // Ustawienia zbiornika
-    html.replace("%TANK_FULL%", String(config.tank_full));
+    html.replace("%MQTT_STATUS%", mqttStatus);
+    html.replace("%MQTT_STATUS_CLASS%", mqttStatusClass);
+    html.replace("%SOUND_STATUS%", soundStatus);
+    html.replace("%SOUND_STATUS_CLASS%", soundStatusClass);
+    html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
     html.replace("%TANK_EMPTY%", String(config.tank_empty));
+    html.replace("%TANK_FULL%", String(config.tank_full));
     html.replace("%RESERVE_LEVEL%", String(config.reserve_level));
     html.replace("%TANK_DIAMETER%", String(config.tank_diameter));
-    
-    // Ustawienia pompy
     html.replace("%PUMP_DELAY%", String(config.pump_delay));
     html.replace("%PUMP_WORK_TIME%", String(config.pump_work_time));
-    
-    // Usuń stary placeholder dla wiadomości
+    html.replace("%BUTTONS%", buttons);
+    html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
+    html.replace("%CONSOLE_SECTION%", FPSTR(CONSOLE_SECTION)); // Dodaj tę linię
+    html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
     html.replace("%MESSAGE%", "");
+
+    // Przygotuj formularze konfiguracyjne
+    String configForms = F("<form method='POST' action='/save'>");
+    
+    // MQTT
+    configForms += F("<div class='section'>"
+                     "<h2>Konfiguracja MQTT</h2>"
+                     "<table class='config-table'>"
+                     "<tr><td>Serwer</td><td><input type='text' name='mqtt_server' value='");
+    configForms += config.mqtt_server;
+    configForms += F("'></td></tr>"
+                     "<tr><td>Port</td><td><input type='number' name='mqtt_port' value='");
+    configForms += String(config.mqtt_port);
+    configForms += F("'></td></tr>"
+                     "<tr><td>Użytkownik</td><td><input type='text' name='mqtt_user' value='");
+    configForms += config.mqtt_user;
+    configForms += F("'></td></tr>"
+                     "<tr><td>Hasło</td><td><input type='password' name='mqtt_password' value='");
+    configForms += config.mqtt_password;
+    configForms += F("'></td></tr>"
+                     "</table></div>");
+    
+    // Zbiornik
+    configForms += F("<div class='section'>"
+                     "<h2>Ustawienia zbiornika</h2>"
+                     "<table class='config-table'>");
+    configForms += "<tr><td>Odległość przy pustym [mm]</td><td><input type='number' name='tank_empty' value='" + String(config.tank_empty) + "'></td></tr>";
+    configForms += "<tr><td>Odległość przy pełnym [mm]</td><td><input type='number' name='tank_full' value='" + String(config.tank_full) + "'></td></tr>";
+    configForms += "<tr><td>Odległość przy rezerwie [mm]</td><td><input type='number' name='reserve_level' value='" + String(config.reserve_level) + "'></td></tr>";
+    configForms += "<tr><td>Średnica zbiornika [mm]</td><td><input type='number' name='tank_diameter' value='" + String(config.tank_diameter) + "'></td></tr>";
+    configForms += F("</table></div>");
+    
+    // Pompa
+    configForms += F("<div class='section'>"
+                     "<h2>Ustawienia pompy</h2>"
+                     "<table class='config-table'>");
+    configForms += "<tr><td>Opóźnienie załączenia pompy [s]</td><td><input type='number' name='pump_delay' value='" + String(config.pump_delay) + "'></td></tr>";
+    configForms += "<tr><td>Czas pracy pompy [s]</td><td><input type='number' name='pump_work_time' value='" + String(config.pump_work_time) + "'></td></tr>";
+    configForms += F("</table></div>");
+    
+    configForms += F("<div class='section'>"
+                     "<input type='submit' value='Zapisz ustawienia' class='btn btn-blue'>"
+                     "</div></form>");
+    
+    html.replace("%CONFIG_FORMS%", configForms);
+    
+    // Sprawdź, czy wszystkie znaczniki zostały zastąpione
+    if (html.indexOf('%') != -1) {
+        Serial.println("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
+        int pos = html.indexOf('%');
+        Serial.println(html.substring(pos - 20, pos + 20));
+    }
     
     return html;
 }
 
 void handleRoot() {
-    server.send(200, "text/html", getConfigPage());
+    String content = getConfigPage();
+
+    server.send(200, "text/html", content);
 }
 
-// Dodaj tę funkcję przed handleSave()
+// Sprawdź sensowność wartości
 bool validateConfigValues() {
-    // Sprawdź sensowność wartości
-    if (server.arg("tank_full").toInt() >= server.arg("tank_empty").toInt() ||
-        server.arg("reserve_level").toInt() >= server.arg("tank_empty").toInt() ||
-        server.arg("tank_diameter").toInt() <= 0 ||
-        server.arg("pump_delay").toInt() < 0 ||
-        server.arg("pump_work_time").toInt() <= 0) {
+    if (server.arg("tank_full").toInt() >= server.arg("tank_empty").toInt() ||  // Sprawdź, czy poziom pełnego zbiornika jest większy lub równy poziomowi pustego zbiornika
+        server.arg("reserve_level").toInt() >= server.arg("tank_empty").toInt() ||  // Sprawdź, czy poziom rezerwy jest większy lub równy poziomowi pustego zbiornika
+        server.arg("tank_diameter").toInt() <= 0 ||  // Sprawdź, czy średnica zbiornika jest większa od 0
+        server.arg("pump_delay").toInt() < 0 ||  // Sprawdź, czy opóźnienie pompy jest większe lub równe 0
+        server.arg("pump_work_time").toInt() <= 0) {  // Sprawdź, czy czas pracy pompy jest większy od 0
         return false;
     }
     return true;
@@ -1504,12 +1646,8 @@ void handleSave() {
         return;
     }
 
-    // Przed zapisem sprawdź poprawność
-    if (!validateConfigValues()) {
-        server.send(400, "text/plain", "Nieprawidłowe wartości! Sprawdź wprowadzone dane.");
-        return;
-    }
-
+    // Zapisz poprzednie wartości na wypadek błędów
+    Config oldConfig = config;
     bool needMqttReconnect = false;
 
     // Zapisz poprzednie wartości MQTT do porównania
@@ -1524,14 +1662,6 @@ void handleSave() {
     strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
     strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
 
-    // Sprawdź czy dane MQTT się zmieniły
-    if (oldServer != config.mqtt_server ||
-        oldPort != config.mqtt_port ||
-        oldUser != config.mqtt_user ||
-        oldPassword != config.mqtt_password) {
-        needMqttReconnect = true;
-    }
-
     // Zapisz ustawienia zbiornika
     config.tank_full = server.arg("tank_full").toInt();
     config.tank_empty = server.arg("tank_empty").toInt();
@@ -1541,6 +1671,22 @@ void handleSave() {
     // Zapisz ustawienia pompy
     config.pump_delay = server.arg("pump_delay").toInt();
     config.pump_work_time = server.arg("pump_work_time").toInt();
+
+    // Sprawdź poprawność wartości
+    if (!validateConfigValues()) {
+        config = oldConfig; // Przywróć poprzednie wartości
+        webSocket.broadcastTXT("save:error:Nieprawidłowe wartości! Sprawdź wprowadzone dane.");
+        server.send(204); // Nie przekierowuj strony
+        return;
+    }
+
+    // Sprawdź czy dane MQTT się zmieniły
+    if (oldServer != config.mqtt_server ||
+        oldPort != config.mqtt_port ||
+        oldUser != config.mqtt_user ||
+        oldPassword != config.mqtt_password) {
+        needMqttReconnect = true;
+    }
 
     // Zapisz konfigurację do EEPROM
     saveConfig();
@@ -1553,13 +1699,71 @@ void handleSave() {
         connectMQTT();
     }
 
-    // Przekieruj z parametrem success
-    server.sendHeader("Location", "/?success=true");
-    server.send(303);
+    // Wyślij informację o sukcesie przez WebSocket
+    webSocket.broadcastTXT("save:success:Zapisano ustawienia!");
+    server.send(204); // Nie przekierowuj strony
+}
+
+void handleDoUpdate() {
+    HTTPUpload& upload = server.upload();
+    
+    if (upload.status == UPLOAD_FILE_START) {
+        // Sprawdź czy plik został wybrany
+        if (upload.filename == "") {
+            webSocket.broadcastTXT("update:error:Nie wybrano pliku!");
+            server.send(204); // Bez przekierowania
+            return;
+        }
+        
+        if (!Update.begin(upload.contentLength)) {
+            Update.printError(Serial);
+            webSocket.broadcastTXT("update:error:Błąd inicjalizacji aktualizacji!");
+            server.send(204);
+            return;
+        }
+        webSocket.broadcastTXT("update:0");
+    } 
+    else if (upload.status == UPLOAD_FILE_WRITE) {
+        if (Update.write(upload.buf, upload.currentSize) != upload.currentSize) {
+            Update.printError(Serial);
+            webSocket.broadcastTXT("update:error:Błąd zapisu pliku!");
+            return;
+        }
+        int progress = (upload.totalSize * 100) / upload.contentLength;
+        String progressMsg = "update:" + String(progress);
+        webSocket.broadcastTXT(progressMsg);
+    } 
+    else if (upload.status == UPLOAD_FILE_END) {
+        if (Update.end(true)) {
+            webSocket.broadcastTXT("update:100");
+            server.send(204);
+            delay(1000);
+            ESP.restart();
+        } else {
+            Update.printError(Serial);
+            webSocket.broadcastTXT("update:error:Błąd zakończenia aktualizacji!");
+            server.send(204);
+        }
+    }
+}
+
+void handleUpdateResult() {
+    if (Update.hasError()) {
+        server.send(200, "text/html", 
+            "<h1>Aktualizacja nie powiodła się</h1>"
+            "<a href='/'>Powrót</a>");
+    } else {
+        server.send(200, "text/html", 
+            "<h1>Aktualizacja zakończona powodzeniem</h1>"
+            "Urządzenie zostanie zrestartowane...");
+        delay(1000);
+        ESP.restart();
+    }
 }
 
 void setupWebServer() {
     server.on("/", handleRoot);
+    server.on("/update", HTTP_POST, handleUpdateResult, handleDoUpdate);
     server.on("/save", handleSave);
     
     server.on("/reboot", HTTP_POST, []() {
@@ -1567,14 +1771,6 @@ void setupWebServer() {
         delay(1000);
         ESP.restart();
     });
-    
-    // server.on("/factory-reset", HTTP_POST, []() {
-    //     server.send(200, "text/plain", "Resetting to factory defaults...");
-    //     delay(1000);
-    //     setDefaultConfig();
-    //     saveConfig();
-    //     ESP.restart();
-    // });
 
     // Obsługa resetu przez WWW
     server.on("/factory-reset", HTTP_POST, []() {
@@ -1586,15 +1782,37 @@ void setupWebServer() {
     server.begin();
 }
 
+void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+    switch(type) {
+        case WStype_DISCONNECTED:
+            Serial.printf("[%u] Rozłączono!\n", num);
+            break;
+        case WStype_CONNECTED:
+            {
+                IPAddress ip = webSocket.remoteIP(num);
+                Serial.printf("[%u] Połączono z %d.%d.%d.%d\n", num, ip[0], ip[1], ip[2], ip[3]);
+            }
+            break;
+        case WStype_TEXT:
+            // Tutaj możesz dodać obsługę komend przychodzących z przeglądarki
+            break;
+    }
+}
+
+void sendSerialMessage(String message) {
+    Serial.println(message);
+    webSocket.broadcastTXT(message);
+}
+
 // --- SETUP ---
 void setup() {
     ESP.wdtEnable(WATCHDOG_TIMEOUT);  // Aktywacja watchdoga
     Serial.begin(115200);  // Inicjalizacja portu szeregowego
-    DEBUG_PRINT("\nHydroSense start...");  // Komunikat startowy
+    webSerial.println("\nHydroSense start...");  // Komunikat startowy
     
     // Wczytaj konfigurację na początku
     if (!loadConfig()) {
-        Serial.println("Błąd wczytywania konfiguracji - używam ustawień domyślnych");
+        webSerial.println("Błąd wczytywania konfiguracji - używam ustawień domyślnych");
         setDefaultConfig();
         saveConfig();  // Zapisz domyślną konfigurację do EEPROM
     }
@@ -1602,6 +1820,8 @@ void setup() {
     setupPin();  // Ustawienia GPIO
     setupWiFi();  // Nawiązanie połączenia WiFi
     setupWebServer();  // Serwer www
+    webSocket.onEvent(webSocketEvent);
+    webSocket.begin();
 
     // Próba połączenia MQTT
     DEBUG_PRINT("Rozpoczynam połączenie MQTT...");
@@ -1626,7 +1846,7 @@ void setup() {
 
     // Powitanie
     if (status.soundEnabled) {  // Gdy jest włączony dzwięk
-        welcomeMelody();  //  to odegraj muzyczkę, że program poprawnie wystartował
+        //welcomeMelody();  //  to odegraj muzyczkę, że program poprawnie wystartował
     }  
         
     // Ustawienia fabryczne    
@@ -1654,6 +1874,7 @@ void loop() {
     handleButton();  // Obsługa naciśnięcia przycisku
     checkAlarmConditions();  // Sprawdzenie warunków alarmowych
     server.handleClient();  // Obsługa serwera WWW
+    webSocket.loop();
 
     // POMIARY I AKTUALIZACJE
     if (currentMillis - timers.lastMeasurement >= MEASUREMENT_INTERVAL) {
@@ -1682,3 +1903,135 @@ void loop() {
         }
     }
 }
+
+// Aby wyświetlać komunikaty Serial w konsoli webowej, należy zmodyfikować kod w następujący sposób:
+
+// Najpierw stwórz własną klasę do obsługi Serial, która będzie przekazywać komunikaty do WebSocket:
+// C++
+// class WebSerial : public Stream {
+// private:
+//     String buffer;
+    
+// public:
+//     WebSerial() {}
+    
+//     size_t write(uint8_t data) override {
+//         if (data == '\n') {
+//             if (buffer.length() > 0) {
+//                 webSocket.broadcastTXT(buffer);
+//                 buffer = "";
+//             }
+//         } else {
+//             buffer += (char)data;
+//         }
+//         Serial.write(data); // Wysyłaj również na standardowy port szeregowy
+//         return 1;
+//     }
+    
+//     size_t write(const uint8_t *buffer, size_t size) override {
+//         for(size_t i = 0; i < size; i++) {
+//             write(buffer[i]);
+//         }
+//         return size;
+//     }
+    
+//     int available() override { return Serial.available(); }
+//     int read() override { return Serial.read(); }
+//     int peek() override { return Serial.peek(); }
+//     void flush() override { Serial.flush(); }
+// };
+
+// WebSerial webSerial;
+// Następnie zmodyfikuj setup():
+// C++
+// void setup() {
+//     Serial.begin(115200);
+//     // ... pozostały kod setup()
+    
+//     webSocket.onEvent(webSocketEvent);
+//     webSocket.begin();
+// }
+// Dodaj obsługę zdarzeń WebSocket:
+// C++
+// void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
+//     switch(type) {
+//         case WStype_DISCONNECTED:
+//             Serial.printf("[%u] Rozłączono!\n", num);
+//             break;
+//         case WStype_CONNECTED:
+//             {
+//                 IPAddress ip = webSocket.remoteIP(num);
+//                 Serial.printf("[%u] Połączono z %d.%d.%d.%d\n", num, ip[0], ip[1], ip[2], ip[3]);
+//             }
+//             break;
+//         case WStype_TEXT:
+//             // Tutaj możesz dodać obsługę komend przychodzących z przeglądarki
+//             break;
+//     }
+// }
+// Modyfikuj funkcje wysyłające komunikaty, aby używały webSerial:
+// C++
+// // Zamiast:
+// Serial.println("Jakiś komunikat");
+
+// // Użyj:
+// webSerial.println("Jakiś komunikat");
+// Upewnij się, że w JavaScript na stronie jest odpowiednia obsługa WebSocket:
+// JavaScript
+// var socket = new WebSocket('ws://' + window.location.hostname + ':81/');
+// socket.onmessage = function(event) {
+//     var message = event.data;
+//     var console = document.getElementById('console');
+    
+//     // Sprawdź czy to nie jest specjalny komunikat (np. update:)
+//     if (!message.startsWith('update:') && !message.startsWith('save:')) {
+//         console.innerHTML += message + '<br>';
+//         console.scrollTop = console.scrollHeight;
+//     }
+// };
+// Dodaj funkcję pomocniczą do formatowania komunikatów z czasem:
+// C++
+// void logMessage(const char* message) {
+//     char timeStr[9];
+//     unsigned long currentMillis = millis();
+//     unsigned long seconds = currentMillis / 1000;
+//     unsigned long minutes = seconds / 60;
+//     unsigned long hours = minutes / 60;
+    
+//     sprintf(timeStr, "%02lu:%02lu:%02lu", hours % 24, minutes % 60, seconds % 60);
+    
+//     webSerial.printf("[%s] %s\n", timeStr, message);
+// }
+
+// // Użycie:
+// logMessage("Uruchamianie systemu...");
+// Aby zachować komunikaty przy odświeżeniu strony, możesz dodać buforowanie:
+// C++
+// const int MAX_LOG_ENTRIES = 50;
+// String logBuffer[MAX_LOG_ENTRIES];
+// int logIndex = 0;
+
+// void addToLogBuffer(const String& message) {
+//     logBuffer[logIndex] = message;
+//     logIndex = (logIndex + 1) % MAX_LOG_ENTRIES;
+// }
+
+// // W funkcji webSocketEvent, gdy klient się połączy:
+// case WStype_CONNECTED:
+//     {
+//         // Wyślij zbuforowane logi
+//         for(int i = 0; i < MAX_LOG_ENTRIES; i++) {
+//             int idx = (logIndex + i) % MAX_LOG_ENTRIES;
+//             if(logBuffer[idx].length() > 0) {
+//                 webSocket.sendTXT(num, logBuffer[idx]);
+//             }
+//         }
+//     }
+//     break;
+// Pamiętaj o:
+
+// Wywołaniu webSocket.loop() w głównej pętli programu
+// Regularnym sprawdzaniu połączenia WebSocket
+// Ograniczeniu ilości wysyłanych komunikatów, aby nie przeciążyć pamięci
+// Dodaniu stylów CSS dla konsoli, aby była czytelna i dobrze się przewijała
+// Komunikaty będą teraz wyświetlane zarówno w monitorze szeregowym Arduino IDE, jak i w konsoli webowej interfejsu.
