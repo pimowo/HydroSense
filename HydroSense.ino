@@ -16,7 +16,7 @@ ESP8266WebServer server(80);  // Tworzenie instancji serwera HTTP na porcie 80
 WebSocketsServer webSocket = WebSocketsServer(81);  // Tworzenie instancji serwera WebSockets na porcie 81
 
 // Wersja systemu
-const char* SOFTWARE_VERSION = "23.11.24";  // Definiowanie wersji oprogramowania
+const char* SOFTWARE_VERSION = "26.11.24";  // Definiowanie wersji oprogramowania
 
 // Konfiguracja pinów ESP8266
 const int PIN_ULTRASONIC_TRIG = D6;  // Pin TRIG czujnika ultradźwiękowego
@@ -327,10 +327,10 @@ bool loadConfig() {
     if (calculatedChecksum == tempConfig.checksum) {
         // Jeśli suma kontrolna się zgadza, skopiuj dane do głównej struktury config
         memcpy(&config, &tempConfig, sizeof(Config));
-        webSerial.println("Konfiguracja wczytana pomyślnie");
+        DEBUG_PRINTF("Konfiguracja wczytana pomyślnie");
         return true;
     } else {
-        webSerial.println("Błąd sumy kontrolnej - ładowanie ustawień domyślnych");
+        DEBUG_PRINTF("Błąd sumy kontrolnej - ładowanie ustawień domyślnych");
         setDefaultConfig();
         return false;
     }
@@ -354,9 +354,9 @@ void saveConfig() {
     EEPROM.end();
     
     if (success) {
-        webSerial.println("Konfiguracja zapisana pomyślnie");
+        DEBUG_PRINTF("Konfiguracja zapisana pomyślnie");
     } else {
-        webSerial.println("Błąd zapisu konfiguracji!");
+        DEBUG_PRINTF("Błąd zapisu konfiguracji!");
     }
 }
 
@@ -493,7 +493,7 @@ void updatePump() {
         sensorPump.setValue("OFF");
         status.pumpSafetyLock = true;
         switchPumpAlarm.setState(true);
-        Serial.println("ALARM: Pompa pracowała za długo - aktywowano blokadę bezpieczeństwa!");
+        DEBUG_PRINTF("ALARM: Pompa pracowała za długo - aktywowano blokadę bezpieczeństwa!");
         return;
     }
     
@@ -1604,9 +1604,9 @@ String getConfigPage() {
     
     // Sprawdź, czy wszystkie znaczniki zostały zastąpione
     if (html.indexOf('%') != -1) {
-        Serial.println("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
+        DEBUG_PRINTF("Uwaga: Niektóre znaczniki nie zostały zastąpione!");
         int pos = html.indexOf('%');
-        Serial.println(html.substring(pos - 20, pos + 20));
+        DEBUG_PRINTF(html.substring(pos - 20, pos + 20));
     }
     
     return html;
@@ -1803,7 +1803,7 @@ void setup() {
     
     // Wczytaj konfigurację na początku
     if (!loadConfig()) {
-        webSerial.println("Błąd wczytywania konfiguracji - używam ustawień domyślnych");
+        DEBUG_PRINTF("Błąd wczytywania konfiguracji - używam ustawień domyślnych");
         setDefaultConfig();
         saveConfig();  // Zapisz domyślną konfigurację do EEPROM
     }
@@ -1837,18 +1837,18 @@ void setup() {
 
     // Powitanie
     if (status.soundEnabled) {  // Gdy jest włączony dzwięk
-        //welcomeMelody();  //  to odegraj muzyczkę, że program poprawnie wystartował
+        welcomeMelody();  //  to odegraj muzyczkę, że program poprawnie wystartował
     }  
         
     // Ustawienia fabryczne    
     // Czekaj 2 sekundy na wciśnięcie przycisku
-    unsigned long startTime = millis();
-    while(millis() - startTime < 2000) {
-        if(digitalRead(PRZYCISK_PIN) == LOW) {
-            playConfirmationSound();
-            factoryReset();
-        }
-    }
+    // unsigned long startTime = millis();
+    // while(millis() - startTime < 2000) {
+    //     if(digitalRead(PRZYCISK_PIN) == LOW) {
+    //         playConfirmationSound();
+    //         factoryReset();
+    //     }
+    // }
 }
 
 // --- LOOP ---
