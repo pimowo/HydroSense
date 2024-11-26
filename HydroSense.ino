@@ -917,7 +917,13 @@ int measureDistance() {
     // Zastosuj filtr EMA z ograniczeniem maksymalnej zmiany
     float maxChange = 10.0; // maksymalna zmiana między pomiarami w mm
     float currentChange = medianValue - lastFilteredDistance;
-    if (abs(currentChange) > maxChange) {
+
+    // Ignoruj zmiany mniejsze niż 2mm
+    if (abs(currentChange) < 2.0) {
+        medianValue = lastFilteredDistance;  // zachowaj poprzednią wartość
+    }
+    // Ogranicz maksymalną zmianę
+    else if (abs(currentChange) > maxChange) {
         medianValue = lastFilteredDistance + (currentChange > 0 ? maxChange : -maxChange);
     }
     
