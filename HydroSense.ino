@@ -59,15 +59,8 @@ const char PAGE_FOOTER[] PROGMEM = R"rawliteral(
 </div>
 )rawliteral";
 
-const char CONSOLE_SECTION[] PROGMEM = R"rawliteral(
-<div class="section">
-    <h2>Konsola</h2>
-    <div id="console" class="console"></div>
-</div>
-)rawliteral";
-
 // Definicja debugowania
-#define DEBUG 1  // 0 wyłącza debug, 1 włącza debug
+#define DEBUG 0  // 0 wyłącza debug, 1 włącza debug
 
 #if DEBUG
     #define DEBUG_PRINT(x) Serial.println(x)
@@ -1518,7 +1511,6 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
     %BUTTONS%
     %CONFIG_FORMS%
     %UPDATE_FORM%
-    %CONSOLE_SECTION%
     %FOOTER%
 </body>
 </html>
@@ -1562,7 +1554,6 @@ String getConfigPage() {
     html.replace("%PUMP_WORK_TIME%", String(config.pump_work_time));
     html.replace("%BUTTONS%", buttons);
     html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
-    html.replace("%CONSOLE_SECTION%", FPSTR(CONSOLE_SECTION)); // Dodaj tę linię
     html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
     html.replace("%MESSAGE%", "");
 
@@ -1903,135 +1894,3 @@ void loop() {
         }
     }
 }
-
-// Aby wyświetlać komunikaty Serial w konsoli webowej, należy zmodyfikować kod w następujący sposób:
-
-// Najpierw stwórz własną klasę do obsługi Serial, która będzie przekazywać komunikaty do WebSocket:
-// C++
-// class WebSerial : public Stream {
-// private:
-//     String buffer;
-    
-// public:
-//     WebSerial() {}
-    
-//     size_t write(uint8_t data) override {
-//         if (data == '\n') {
-//             if (buffer.length() > 0) {
-//                 webSocket.broadcastTXT(buffer);
-//                 buffer = "";
-//             }
-//         } else {
-//             buffer += (char)data;
-//         }
-//         Serial.write(data); // Wysyłaj również na standardowy port szeregowy
-//         return 1;
-//     }
-    
-//     size_t write(const uint8_t *buffer, size_t size) override {
-//         for(size_t i = 0; i < size; i++) {
-//             write(buffer[i]);
-//         }
-//         return size;
-//     }
-    
-//     int available() override { return Serial.available(); }
-//     int read() override { return Serial.read(); }
-//     int peek() override { return Serial.peek(); }
-//     void flush() override { Serial.flush(); }
-// };
-
-// WebSerial webSerial;
-// Następnie zmodyfikuj setup():
-// C++
-// void setup() {
-//     Serial.begin(115200);
-//     // ... pozostały kod setup()
-    
-//     webSocket.onEvent(webSocketEvent);
-//     webSocket.begin();
-// }
-// Dodaj obsługę zdarzeń WebSocket:
-// C++
-// void webSocketEvent(uint8_t num, WStype_t type, uint8_t * payload, size_t length) {
-//     switch(type) {
-//         case WStype_DISCONNECTED:
-//             Serial.printf("[%u] Rozłączono!\n", num);
-//             break;
-//         case WStype_CONNECTED:
-//             {
-//                 IPAddress ip = webSocket.remoteIP(num);
-//                 Serial.printf("[%u] Połączono z %d.%d.%d.%d\n", num, ip[0], ip[1], ip[2], ip[3]);
-//             }
-//             break;
-//         case WStype_TEXT:
-//             // Tutaj możesz dodać obsługę komend przychodzących z przeglądarki
-//             break;
-//     }
-// }
-// Modyfikuj funkcje wysyłające komunikaty, aby używały webSerial:
-// C++
-// // Zamiast:
-// Serial.println("Jakiś komunikat");
-
-// // Użyj:
-// webSerial.println("Jakiś komunikat");
-// Upewnij się, że w JavaScript na stronie jest odpowiednia obsługa WebSocket:
-// JavaScript
-// var socket = new WebSocket('ws://' + window.location.hostname + ':81/');
-// socket.onmessage = function(event) {
-//     var message = event.data;
-//     var console = document.getElementById('console');
-    
-//     // Sprawdź czy to nie jest specjalny komunikat (np. update:)
-//     if (!message.startsWith('update:') && !message.startsWith('save:')) {
-//         console.innerHTML += message + '<br>';
-//         console.scrollTop = console.scrollHeight;
-//     }
-// };
-// Dodaj funkcję pomocniczą do formatowania komunikatów z czasem:
-// C++
-// void logMessage(const char* message) {
-//     char timeStr[9];
-//     unsigned long currentMillis = millis();
-//     unsigned long seconds = currentMillis / 1000;
-//     unsigned long minutes = seconds / 60;
-//     unsigned long hours = minutes / 60;
-    
-//     sprintf(timeStr, "%02lu:%02lu:%02lu", hours % 24, minutes % 60, seconds % 60);
-    
-//     webSerial.printf("[%s] %s\n", timeStr, message);
-// }
-
-// // Użycie:
-// logMessage("Uruchamianie systemu...");
-// Aby zachować komunikaty przy odświeżeniu strony, możesz dodać buforowanie:
-// C++
-// const int MAX_LOG_ENTRIES = 50;
-// String logBuffer[MAX_LOG_ENTRIES];
-// int logIndex = 0;
-
-// void addToLogBuffer(const String& message) {
-//     logBuffer[logIndex] = message;
-//     logIndex = (logIndex + 1) % MAX_LOG_ENTRIES;
-// }
-
-// // W funkcji webSocketEvent, gdy klient się połączy:
-// case WStype_CONNECTED:
-//     {
-//         // Wyślij zbuforowane logi
-//         for(int i = 0; i < MAX_LOG_ENTRIES; i++) {
-//             int idx = (logIndex + i) % MAX_LOG_ENTRIES;
-//             if(logBuffer[idx].length() > 0) {
-//                 webSocket.sendTXT(num, logBuffer[idx]);
-//             }
-//         }
-//     }
-//     break;
-// Pamiętaj o:
-
-// Wywołaniu webSocket.loop() w głównej pętli programu
-// Regularnym sprawdzaniu połączenia WebSocket
-// Ograniczeniu ilości wysyłanych komunikatów, aby nie przeciążyć pamięci
-// Dodaniu stylów CSS dla konsoli, aby była czytelna i dobrze się przewijała
-// Komunikaty będą teraz wyświetlane zarówno w monitorze szeregowym Arduino IDE, jak i w konsoli webowej interfejsu.
