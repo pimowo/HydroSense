@@ -1,3 +1,61 @@
+# HydroSense
+
+HydroSense is a lightweight, modular firmware for ESP8266-based soil/water level monitoring and pump control. It targets low-cost hardware (WeMos D1 mini / NodeMCU) and focuses on reliable, non-blocking operation suited for Home Assistant integration.
+
+## Key features
+
+- Non-blocking ultrasonic distance measurement (state-machine based)
+- Safe pump control with runtime limits and dry-run protection
+- Asynchronous Wi‑Fi initialization with retry logic
+- OTA updates and a Web UI for configuration (optional)
+- Home Assistant discovery via MQTT
+
+## Hardware
+
+- Board: ESP8266 (WeMos D1 mini or equivalent)
+- Ultrasonic sensor: HC-SR04 / JSN-SR04T (trigger/echo pins in `src/pins.h`)
+- Relay module for pump control (use proper isolation and external power)
+- Optional: float switch or water-level sensor
+
+## Quick start (build & upload)
+
+1. Install PlatformIO (VS Code extension or PlatformIO Core CLI).
+2. Open the project folder.
+3. Build for the device:
+
+```powershell
+platformio run -e d1_mini
+```
+
+4. Upload to a connected device (adjust port if necessary):
+
+```powershell
+platformio run -e d1_mini -t upload --upload-port COM3
+```
+
+## Unit tests (native)
+
+The repository includes a `native` test environment using Unity. To run tests locally you need a host GCC toolchain (MSYS2/MinGW on Windows).
+
+```powershell
+platformio test -e native
+```
+
+## Configuration
+
+Persistent settings are stored in EEPROM. See `src/config.*` for configuration fields and defaults. Network, MQTT and pump parameters can be adjusted from the Web UI.
+
+## Contributing
+
+Contributions, bug reports and feature requests are welcome. Please open an issue describing the problem and include logs or reproduction steps where possible.
+
+## License
+
+This project is released under the MIT License — see `LICENSE`.
+
+---
+
+Maintainer: Piotrek (@pimowo)
 # HydroSense wersja testowa
 
 HydroSense to inteligentny system monitorowania i kontroli zbiornika wody oparty na ESP8266, zintegrowany z Home Assistant. System umożliwia zdalne monitorowanie poziomu wody, automatyczne sterowanie pompą oraz obsługę alarmów.
