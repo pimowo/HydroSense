@@ -25,5 +25,8 @@ void setDefaultConfig();
 bool loadConfig();
 void saveConfig();
 char calculateChecksum(const Config& cfg);
+// Network credentials helpers (stored separately from main Config)
+bool loadNetworkCredentials(char* ssidOut, size_t ssidSize, char* passOut, size_t passSize);
+void saveNetworkCredentials(const char* ssid, const char* pass);
 
 #endif // CONFIG_H

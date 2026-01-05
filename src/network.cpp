@@ -292,7 +292,6 @@ void setupWiFi() {
 
 void handleSave() {
     if (server.method() != HTTP_POST) { server.send(405, "text/plain", "Method Not Allowed"); return; }
-
     bool needMqttReconnect = false;
 
     String oldServer = config.mqtt_server;
@@ -300,32 +299,55 @@ void handleSave() {
     String oldUser = config.mqtt_user;
     String oldPassword = config.mqtt_password;
 
-    strlcpy(config.mqtt_server, server.arg("mqtt_server").c_str(), sizeof(config.mqtt_server));
-    config.mqtt_port = server.arg("mqtt_port").toInt();
-    strlcpy(config.mqtt_user, server.arg("mqtt_user").c_str(), sizeof(config.mqtt_user));
-    strlcpy(config.mqtt_password, server.arg("mqtt_password").c_str(), sizeof(config.mqtt_password));
+    // Read raw arguments first
+    String arg_mqtt_server = server.arg("mqtt_server");
+    int arg_mqtt_port = server.arg("mqtt_port").toInt();
+    String arg_mqtt_user = server.arg("mqtt_user");
+    String arg_mqtt_password = server.arg("mqtt_password");
 
-    config.tank_full = server.arg("tank_full").toInt();
-    config.tank_empty = server.arg("tank_empty").toInt();
-    config.reserve_level = server.arg("reserve_level").toInt();
-    config.tank_diameter = server.arg("tank_diameter").toInt();
+    int arg_tank_full = server.arg("tank_full").toInt();
+    int arg_tank_empty = server.arg("tank_empty").toInt();
+    int arg_reserve_level = server.arg("reserve_level").toInt();
+    int arg_tank_diameter = server.arg("tank_diameter").toInt();
+
+    String arg_wifi_ssid = server.arg("wifi_ssid");
+    String arg_wifi_pass = server.arg("wifi_pass");
+
+    // Server-side validation
+    if (!(arg_mqtt_port >= 1 && arg_mqtt_port <= 65535)) {
+        server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"Nieprawidłowy port MQTT\"}");
+        return;
+    }
+    if (!(arg_tank_empty > arg_tank_full)) {
+        server.send(400, "application/json", "{\"status\":\"error\",\"message\":\"'tank_empty' musi być większe niż 'tank_full'\"}");
+        return;
+    }
+
+    // Apply to config
+    strlcpy(config.mqtt_server, arg_mqtt_server.c_str(), sizeof(config.mqtt_server));
+    config.mqtt_port = arg_mqtt_port;
+    strlcpy(config.mqtt_user, arg_mqtt_user.c_str(), sizeof(config.mqtt_user));
+    strlcpy(config.mqtt_password, arg_mqtt_password.c_str(), sizeof(config.mqtt_password));
+
+    config.tank_full = arg_tank_full;
+    config.tank_empty = arg_tank_empty;
+    config.reserve_level = arg_reserve_level;
+    config.tank_diameter = arg_tank_diameter;
 
     config.pump_delay = server.arg("pump_delay").toInt();
     config.pump_work_time = server.arg("pump_work_time").toInt();
 
-    if (oldServer != config.mqtt_server || oldPort != config.mqtt_port || oldUser != config.mqtt_user || oldPassword != config.mqtt_password) {
+    if (oldServer != String(config.mqtt_server) || oldPort != config.mqtt_port || oldUser != String(config.mqtt_user) || oldPassword != String(config.mqtt_password)) {
         needMqttReconnect = true;
     }
 
     saveConfig();
 
-    String wifi_ssid = server.arg("wifi_ssid");
-    String wifi_pass = server.arg("wifi_pass");
-
-    if (wifi_ssid.length() > 0) {
-        // Start connecting immediately with provided credentials (not persisted)
+    if (arg_wifi_ssid.length() > 0) {
+        // Persist network credentials and attempt immediate connect
+        saveNetworkCredentials(arg_wifi_ssid.c_str(), arg_wifi_pass.c_str());
         WiFi.mode(WIFI_STA);
-        WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
+        WiFi.begin(arg_wifi_ssid.c_str(), arg_wifi_pass.c_str());
         timers.lastWiFiAttempt = millis();
         DEBUG_PRINT("Rozpoczęto łączenie do podanej sieci WiFi");
     }

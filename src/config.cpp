@@ -5,6 +5,16 @@
 
 Config config;
 
+#ifdef ARDUINO
+// EEPROM layout helpers for config and network creds
+const size_t CFG_SLOT_METADATA = sizeof(uint32_t);
+const size_t CFG_SLOT_SIZE = CFG_SLOT_METADATA + sizeof(Config);
+const int CFG_SLOTS = 2;
+const size_t WIFI_SSID_MAX = 32;
+const size_t WIFI_PASS_MAX = 64;
+const size_t NETWORK_BASE = CFG_SLOT_SIZE * CFG_SLOTS;
+#endif
+
 void setDefaultConfig() {
     config.soundEnabled = true;
     strlcpy(config.mqtt_server, "", sizeof(config.mqtt_server));
@@ -19,6 +29,58 @@ void setDefaultConfig() {
     config.pump_work_time = 30;
     config.checksum = calculateChecksum(config);
     saveConfig();
+}
+
+bool loadNetworkCredentials(char* ssidOut, size_t ssidSize, char* passOut, size_t passSize) {
+#ifdef ARDUINO
+    if (!ssidOut || !passOut) return false;
+    EEPROM.begin(NETWORK_BASE + WIFI_SSID_MAX + WIFI_PASS_MAX + 8);
+    uint8_t bufSSID[WIFI_SSID_MAX];
+    uint8_t bufPASS[WIFI_PASS_MAX];
+    for (size_t i = 0; i < WIFI_SSID_MAX; ++i) bufSSID[i] = EEPROM.read(NETWORK_BASE + i);
+    for (size_t i = 0; i < WIFI_PASS_MAX; ++i) bufPASS[i] = EEPROM.read(NETWORK_BASE + WIFI_SSID_MAX + i);
+    uint8_t storedChecksum = EEPROM.read(NETWORK_BASE + WIFI_SSID_MAX + WIFI_PASS_MAX);
+    // compute checksum
+    uint8_t checksum = 0;
+    for (size_t i = 0; i < WIFI_SSID_MAX; ++i) checksum ^= bufSSID[i];
+    for (size_t i = 0; i < WIFI_PASS_MAX; ++i) checksum ^= bufPASS[i];
+    EEPROM.end();
+    if (checksum != storedChecksum) return false;
+    // copy up to first NUL or full buffer
+    size_t sLen = 0; while (sLen < WIFI_SSID_MAX && bufSSID[sLen]) ++sLen;
+    size_t pLen = 0; while (pLen < WIFI_PASS_MAX && bufPASS[pLen]) ++pLen;
+    size_t copyS = min(sLen, ssidSize-1);
+    size_t copyP = min(pLen, passSize-1);
+    memcpy(ssidOut, bufSSID, copyS); ssidOut[copyS]=0;
+    memcpy(passOut, bufPASS, copyP); passOut[copyP]=0;
+    return true;
+#else
+    (void)ssidOut; (void)ssidSize; (void)passOut; (void)passSize;
+    return false;
+#endif
+}
+
+void saveNetworkCredentials(const char* ssid, const char* pass) {
+#ifdef ARDUINO
+    EEPROM.begin(NETWORK_BASE + WIFI_SSID_MAX + WIFI_PASS_MAX + 8);
+    uint8_t bufSSID[WIFI_SSID_MAX];
+    uint8_t bufPASS[WIFI_PASS_MAX];
+    memset(bufSSID, 0, WIFI_SSID_MAX);
+    memset(bufPASS, 0, WIFI_PASS_MAX);
+    if (ssid) strncpy((char*)bufSSID, ssid, WIFI_SSID_MAX-1);
+    if (pass) strncpy((char*)bufPASS, pass, WIFI_PASS_MAX-1);
+    for (size_t i = 0; i < WIFI_SSID_MAX; ++i) EEPROM.write(NETWORK_BASE + i, bufSSID[i]);
+    for (size_t i = 0; i < WIFI_PASS_MAX; ++i) EEPROM.write(NETWORK_BASE + WIFI_SSID_MAX + i, bufPASS[i]);
+    uint8_t checksum = 0;
+    for (size_t i = 0; i < WIFI_SSID_MAX; ++i) checksum ^= bufSSID[i];
+    for (size_t i = 0; i < WIFI_PASS_MAX; ++i) checksum ^= bufPASS[i];
+    EEPROM.write(NETWORK_BASE + WIFI_SSID_MAX + WIFI_PASS_MAX, checksum);
+    ESP.wdtFeed();
+    EEPROM.commit();
+    EEPROM.end();
+#else
+    (void)ssid; (void)pass;
+#endif
 }
 
 bool loadConfig() {
