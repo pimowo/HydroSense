@@ -283,11 +283,19 @@ bool connectMQTT() {
 }
 
 void setupWiFi() {
-    // Start non-blocking WiFi connection using saved credentials.
+    // Start non-blocking WiFi connection using saved credentials if available.
     WiFi.mode(WIFI_STA);
-    WiFi.begin();
+    char savedSsid[33] = {0};
+    char savedPass[65] = {0};
+    if (loadNetworkCredentials(savedSsid, sizeof(savedSsid), savedPass, sizeof(savedPass))) {
+        DEBUG_PRINT("Znaleziono zapisane poświadczenia WiFi, łączenie...");
+        WiFi.begin(savedSsid, savedPass);
+    } else {
+        // Fall back to default non-blocking begin (uses stored WiFi config or WiFiManager)
+        WiFi.begin();
+        DEBUG_PRINT("Rozpoczęto asynchroniczne łączenie WiFi (brak zapisanej sieci)");
+    }
     timers.lastWiFiAttempt = millis();
-    DEBUG_PRINT("Rozpoczęto asynchroniczne łączenie WiFi");
 }
 
 void handleSave() {
