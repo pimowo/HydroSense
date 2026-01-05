@@ -7,23 +7,140 @@
 
 // Konfiguracja strony i formularzy (przeniesione z main.cpp)
 const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
-  <!DOCTYPE html>
-  <html>
+<!doctype html>
+<html lang="pl">
     <head>
-        <meta charset='UTF-8'>
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>HydroSense</title>
-        <style>body{font-family:Arial,sans-serif;background:#1a1a1a;color:#fff;}/*minified*/</style>
-        <script>/* minimal client scripts omitted for brevity in module */</script>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width,initial-scale=1">
+        <title>HydroSense — Konfiguracja</title>
+        <style>
+            :root{--bg:#0f1115;--panel:#15181d;--muted:#9aa3b2;--accent:#4dd0e1;--accent-2:#7bd389;--danger:#ff6b6b;--glass:rgba(255,255,255,0.03)}
+            *{box-sizing:border-box}
+            html,body{height:100%;margin:0;font-family:Inter,Segoe UI,Helvetica,Arial,sans-serif;background:linear-gradient(180deg,var(--bg),#0b0c0f);color:#e6eef3}
+            .wrap{max-width:1100px;margin:20px auto;padding:18px}
+            header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+            h1{font-size:1.1rem;margin:0}
+            .meta{color:var(--muted);font-size:0.85rem}
+            .layout{display:grid;grid-template-columns:1fr 360px;gap:18px;margin-top:18px}
+            @media(max-width:820px){.layout{grid-template-columns:1fr} .side{order:2}}
+            .panel{background:linear-gradient(180deg,var(--panel),#0f1316);border-radius:12px;padding:16px;box-shadow:0 6px 18px rgba(0,0,0,0.6);backdrop-filter:blur(4px)}
+            label{display:block;color:var(--muted);font-size:0.85rem;margin-bottom:6px}
+            input[type=text],input[type=number],input[type=password],select{width:100%;padding:10px;border-radius:8px;border:1px solid rgba(255,255,255,0.04);background:var(--glass);color:#e6eef3}
+            .row{display:flex;gap:10px}
+            .btn{display:inline-block;padding:10px 14px;border-radius:10px;border:0;background:var(--accent);color:#041316;cursor:pointer}
+            .btn.ghost{background:transparent;border:1px solid rgba(255,255,255,0.04);color:var(--muted)}
+            .small{font-size:0.85rem;padding:8px 10px}
+            .muted{color:var(--muted);font-size:0.85rem}
+            .status{padding:8px;border-radius:8px;background:rgba(255,255,255,0.02);display:flex;align-items:center;gap:8px}
+            .footer{margin-top:14px;color:var(--muted);font-size:0.8rem;text-align:center}
+            .section-title{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+            .wifi-list{margin:8px 0;padding:8px;border-radius:8px;background:rgba(255,255,255,0.02)}
+            .field-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+            @media(max-width:480px){.field-grid{grid-template-columns:1fr}}
+        </style>
+        <script>
+            function confirmAction(msg, path){ if(confirm(msg)){ fetch(path,{method:'POST'}).then(()=>location.reload()) } }
+            function submitForm(){ document.querySelector('form').submit(); }
+            // simple helper to toggle sections on mobile
+            function toggle(id){const e=document.getElementById(id); if(e) e.style.display = (e.style.display==='none')?'block':'none'}
+        </script>
     </head>
     <body>
-        <h1>HydroSense</h1>
-        %BUTTONS%
-        %CONFIG_FORMS%
-        %UPDATE_FORM%
-        %FOOTER%
+        <div class="wrap">
+            <header>
+                <div>
+                    <h1>HydroSense</h1>
+                    <div class="meta">Wersja: %SOFTWARE_VERSION% — konfiguracja urządzenia</div>
+                </div>
+                <div class="row">
+                    <button class="btn small" onclick="location.reload()">Odśwież</button>
+                    <button class="btn ghost small" onclick="confirmAction('Czy na pewno zrestartować urządzenie?','/reboot')">Restart</button>
+                    <button class="btn ghost small" onclick="confirmAction('Przywrócić ustawienia fabryczne?','/factory-reset')" style="background:transparent;border:1px solid rgba(255,255,255,0.06);">Factory reset</button>
+                </div>
+            </header>
+
+            <div class="layout">
+                <main class="panel">
+                    <div class="section-title"><strong>Sieć Wi‑Fi</strong><span class="muted">Ustawienia i status</span></div>
+                    <div class="status"><div style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></div><div>%MQTT_STATUS%</div><div style="margin-left:auto;color:var(--muted)">%MQTT_STATUS_CLASS%</div></div>
+
+                    <div style="margin-top:12px">
+                        <form method='POST' action='/save'>
+                            <div style="margin-bottom:12px">
+                                <label>SSID (opcjonalne)</label>
+                                <input type='text' name='wifi_ssid' placeholder='Pozostaw puste aby użyć zapisanych danych'>
+                            </div>
+                            <div style="margin-bottom:12px">
+                                <label>Hasło (opcjonalne)</label>
+                                <input type='password' name='wifi_pass' placeholder='Hasło sieci Wi‑Fi'>
+                            </div>
+
+                            <div style="margin-top:8px" class="section-title"><strong>MQTT</strong><span class="muted">Ustawienia brokera</span></div>
+                            <div class="field-grid">
+                                <div>
+                                    <label>Serwer</label>
+                                    <input type='text' name='mqtt_server' value='%MQTT_SERVER%'>
+                                </div>
+                                <div>
+                                    <label>Port</label>
+                                    <input type='number' name='mqtt_port' value='%MQTT_PORT%'>
+                                </div>
+                                <div>
+                                    <label>Użytkownik</label>
+                                    <input type='text' name='mqtt_user' value='%MQTT_USER%'>
+                                </div>
+                                <div>
+                                    <label>Hasło</label>
+                                    <input type='password' name='mqtt_password' value=''>
+                                </div>
+                            </div>
+
+                            <div style="margin-top:12px" class="section-title"><strong>Zbiornik</strong><span class="muted">Wymiary i progi</span></div>
+                            <div class="field-grid">
+                                <div>
+                                    <label>Odległość przy pustym [mm]</label>
+                                    <input type='number' name='tank_empty' value='%TANK_EMPTY%'>
+                                </div>
+                                <div>
+                                    <label>Odległość przy pełnym [mm]</label>
+                                    <input type='number' name='tank_full' value='%TANK_FULL%'>
+                                </div>
+                                <div>
+                                    <label>Rezerwa [mm]</label>
+                                    <input type='number' name='reserve_level' value='%RESERVE_LEVEL%'>
+                                </div>
+                                <div>
+                                    <label>Średnica zbiornika [mm]</label>
+                                    <input type='number' name='tank_diameter' value='%TANK_DIAMETER%'>
+                                </div>
+                            </div>
+
+                            <div style="margin-top:16px;display:flex;gap:10px;align-items:center">
+                                <button type='submit' class='btn'>Zapisz ustawienia</button>
+                                <button type='button' class='btn ghost' onclick="toggle('wifi-networks')">Pokaż sieci Wi‑Fi</button>
+                                <div style="margin-left:auto" class="muted">%SOFTWARE_VERSION%</div>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div id="wifi-networks" style="display:none;margin-top:10px" class="panel">
+                        <div class="section-title"><strong>Dostępne sieci</strong><span class="muted">Kliknij, by wypełnić SSID</span></div>
+                        <div class="wifi-list">%WIFI_LIST%</div>
+                    </div>
+                </main>
+
+                <aside class="side panel">
+                    <div class="section-title"><strong>Szybkie akcje</strong></div>
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                        %BUTTONS%
+                        %UPDATE_FORM%
+                    </div>
+                    <div class="footer">%FOOTER%</div>
+                </aside>
+            </div>
+        </div>
     </body>
-  </html>
+</html>
 )rawliteral";
 
 const char UPDATE_FORM[] PROGMEM = R"rawliteral(
