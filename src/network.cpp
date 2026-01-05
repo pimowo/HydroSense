@@ -43,6 +43,21 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
             function submitForm(){ document.querySelector('form').submit(); }
             // simple helper to toggle sections on mobile
             function toggle(id){const e=document.getElementById(id); if(e) e.style.display = (e.style.display==='none')?'block':'none'}
+            function fetchNetworks(){
+                const el = document.querySelector('.wifi-list');
+                if(!el) return;
+                el.innerHTML = '<div class="muted">Skanowanie... proszę czekać</div>';
+                fetch('/scan_wifi').then(r=>r.json()).then(list=>{
+                    if(!list || list.length===0){ el.innerHTML = '<div class="muted">Brak sieci</div>'; return; }
+                    let html='';
+                    list.sort((a,b)=>b.rssi-a.rssi);
+                    list.forEach(item=>{
+                        const lock = item.secure? '🔒':'🔓';
+                        html += `<div style="padding:6px;border-bottom:1px solid rgba(255,255,255,0.02);display:flex;align-items:center;justify-content:space-between"><div><a href='#' onclick="document.querySelector('input[name=wifi_ssid]').value='${item.ssid}';return false">${item.ssid}</a><div class='muted' style='font-size:0.8rem'>RSSI: ${item.rssi} ${lock}</div></div><div><button class='btn ghost small' onclick="document.querySelector('input[name=wifi_ssid]').value='${item.ssid}';">Wybierz</button></div></div>`;
+                    });
+                    el.innerHTML = html;
+                }).catch(err=>{ el.innerHTML = '<div class="muted">Błąd skanowania</div>'; });
+            }
         </script>
     </head>
     <body>
@@ -171,40 +186,33 @@ String getConfigPage() {
     bool mqttConnected = client.connected();
     String mqttStatus = mqttConnected ? "Połączony" : "Rozłączony";
     String mqttStatusClass = mqttConnected ? "success" : "error";
-    String soundStatus = config.soundEnabled ? "Włączony" : "Wyłączony";
-    String soundStatusClass = config.soundEnabled ? "success" : "error";
 
     String buttons = F(
-        "<div class='section'>"
-        "<div class='buttons-container'>"
-        "<button class='btn btn-blue' onclick='rebootDevice()'>Restart urządzenia</button>"
-        "<button class='btn btn-red' onclick='factoryReset()'>Przywróć ustawienia fabryczne</button>"
-        "</div>"
+        "<div style='display:flex;flex-direction:column;gap:8px'>"
+        "<button class='btn ghost small' onclick='confirmAction(\"Czy na pewno zrestartować urządzenie?\", \"/reboot\")'>Restart</button>"
+        "<button class='btn ghost small' onclick='confirmAction(\"Przywrócić ustawienia fabryczne?\", \"/factory-reset\")'>Factory reset</button>"
         "</div>"
     );
 
     html.replace("%MQTT_STATUS%", mqttStatus);
-    html.replace("%MQTT_STATUS_CLASS%", mqttStatusClass);
-    html.replace("%SOUND_STATUS%", soundStatus);
-    html.replace("%SOUND_STATUS_CLASS%", soundStatusClass);
+    html.replace("%MQTT_STATUS_CLASS%", mqttStatusClass == "success" ? "Połączony" : "Rozłączony");
     html.replace("%SOFTWARE_VERSION%", SOFTWARE_VERSION);
     html.replace("%BUTTONS%", buttons);
     html.replace("%UPDATE_FORM%", FPSTR(UPDATE_FORM));
     html.replace("%FOOTER%", FPSTR(PAGE_FOOTER));
 
-    // Build config forms compactly
-    String configForms = F("<form method='POST' action='/save'>");
-    configForms += F("<div class='section'><h2>Konfiguracja MQTT</h2><table class='config-table'>");
-    configForms += F("<tr><td>Serwer</td><td><input type='text' name='mqtt_server' value='") + String(config.mqtt_server) + F("'></td></tr>");
-    configForms += F("<tr><td>Port</td><td><input type='number' name='mqtt_port' value='") + String(config.mqtt_port) + F("'></td></tr>");
-    configForms += F("</table></div>");
-    configForms += F("<div class='section'><h2>Ustawienia zbiornika</h2><table class='config-table'>");
-    configForms += "<tr><td>Odległość przy pustym [mm]</td><td><input type='number' name='tank_empty' value='" + String(config.tank_empty) + "'></td></tr>";
-    configForms += "<tr><td>Odległość przy pełnym [mm]</td><td><input type='number' name='tank_full' value='" + String(config.tank_full) + "'></td></tr>";
-    configForms += F("</table></div>");
-    configForms += F("<div class='section'><input type='submit' value='Zapisz ustawienia' class='btn btn-blue'></div></form>");
+    // Fill dynamic fields
+    html.replace("%MQTT_SERVER%", String(config.mqtt_server));
+    html.replace("%MQTT_PORT%", String(config.mqtt_port));
+    html.replace("%MQTT_USER%", String(config.mqtt_user));
 
-    html.replace("%CONFIG_FORMS%", configForms);
+    html.replace("%TANK_EMPTY%", String(config.tank_empty));
+    html.replace("%TANK_FULL%", String(config.tank_full));
+    html.replace("%RESERVE_LEVEL%", String(config.reserve_level));
+    html.replace("%TANK_DIAMETER%", String(config.tank_diameter));
+
+    // Placeholder for WiFi list – client can call /scan_wifi to populate
+    html.replace("%WIFI_LIST%", "<div class='muted'>Kliknij 'Pokaż sieci Wi‑Fi', aby przeskanować sieci.</div>");
 
 #if DEBUG
     if (html.indexOf('%') != -1) {
@@ -220,6 +228,22 @@ String getConfigPage() {
 
 void handleRoot() {
     server.send(200, "text/html", getConfigPage());
+}
+
+void handleScanWifi() {
+    int n = WiFi.scanNetworks();
+    String out = "[";
+    for (int i = 0; i < n; ++i) {
+        String ssid = WiFi.SSID(i);
+        int rssi = WiFi.RSSI(i);
+        bool secure = WiFi.encryptionType(i) != ENC_TYPE_NONE;
+        // Escape quotes in SSID
+        ssid.replace("\"", "\\\"");
+        out += "{\"ssid\":\"" + ssid + "\",\"rssi\":" + String(rssi) + ",\"secure\":" + String(secure?1:0) + "}";
+        if (i < n-1) out += ",";
+    }
+    out += "]";
+    server.send(200, "application/json", out);
 }
 
 bool connectMQTT() {   
@@ -312,6 +336,7 @@ void setupWebServer() {
     server.on("/", handleRoot);
     server.on("/update", HTTP_POST, handleUpdateResult, handleDoUpdate);
     server.on("/save", handleSave);
+    server.on("/scan_wifi", HTTP_GET, handleScanWifi);
     server.on("/reboot", HTTP_POST, [](){ server.send(200, "text/plain", "Restarting..."); delay(1000); ESP.restart(); });
     server.on("/factory-reset", HTTP_POST, [](){ server.send(200, "text/plain", "Resetting to factory defaults..."); delay(200); factoryReset(); });
     server.begin();
