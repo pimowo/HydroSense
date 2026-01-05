@@ -75,9 +75,9 @@ void ultrasonicTask() {
             {
                 int validCount = 0;
                 for (int i = 0; i < us_sampleIndex; ++i) if (us_samples[i] != -1) validCount++;
-                if (validCount < (SENSOR_AVG_SAMPLES / 2)) {
-                    us_resultDistance = -1;
-                } else {
+                    if (validCount < (SENSOR_AVG_SAMPLES / 2)) {
+                        us_resultDistance = -1;
+                    } else {
                     int tmp[validCount];
                     int idx = 0;
                     for (int i = 0; i < us_sampleIndex; ++i) if (us_samples[i] != -1) tmp[idx++] = us_samples[i];
@@ -87,6 +87,24 @@ void ultrasonicTask() {
                     us_resultDistance = median;
                 }
                 us_resultReady = true;
+                // Apply range check and smoothing (EMA) to produce a stable measurement
+                if (us_resultDistance >= 0) {
+                    if (us_resultDistance < SENSOR_MIN_RANGE || us_resultDistance > SENSOR_MAX_RANGE) {
+                        // reject out-of-range reading
+                        us_resultDistance = -1;
+                    } else {
+                        // if first valid measurement, initialize filter
+                        if (lastFilteredDistance <= 0) {
+                            lastFilteredDistance = (float)us_resultDistance;
+                        } else {
+                            float delta = fabs((float)us_resultDistance - lastFilteredDistance);
+                            // reject large spikes
+                            if (delta <= 200.0f) {
+                                lastFilteredDistance = (1.0f - EMA_ALPHA) * lastFilteredDistance + EMA_ALPHA * (float)us_resultDistance;
+                            } // else keep previous filtered value (ignore spike)
+                        }
+                    }
+                }
             }
             us_state = US_IDLE;
             break;
@@ -149,8 +167,12 @@ void updateWaterLevel() {
     if (!us_resultReady) return;
 
     // Use measurement result
-    if (us_resultDistance < 0) return;
-    currentDistance = us_resultDistance;
+    if (us_resultDistance < 0) {
+        us_resultReady = false;
+        return;
+    }
+    // Use filtered value for downstream logic to avoid reacting to spikes
+    currentDistance = (int)lastFilteredDistance;
     us_resultReady = false;
 
     updateAlarmStates(currentDistance);
