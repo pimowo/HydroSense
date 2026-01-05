@@ -13,5 +13,6 @@ void handleRoot();
 void handleSave();
 void handleDoUpdate();
 void handleUpdateResult();
+void handleWiFiBackoff();
 
 #endif // NETWORK_H

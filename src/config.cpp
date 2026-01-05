@@ -23,16 +23,40 @@ void setDefaultConfig() {
 
 bool loadConfig() {
 #ifdef ARDUINO
-    EEPROM.begin(sizeof(Config) + 1);
-    Config tempConfig;
-    uint8_t *p = (uint8_t*)&tempConfig;
-    for (size_t i = 0; i < sizeof(Config); i++) {
-        p[i] = EEPROM.read(i);
+    // Simple 2-slot wear-leveling: each slot contains a uint32_t seq + Config
+    const size_t SLOT_METADATA = sizeof(uint32_t);
+    const size_t SLOT_SIZE = SLOT_METADATA + sizeof(Config);
+    const int SLOTS = 2;
+    EEPROM.begin(SLOT_SIZE * SLOTS + 8);
+
+    uint32_t bestSeq = 0;
+    Config bestCfg;
+    bool found = false;
+
+    for (int s = 0; s < SLOTS; ++s) {
+        size_t base = s * SLOT_SIZE;
+        uint32_t seq = 0;
+        uint8_t *seqP = (uint8_t*)&seq;
+        for (size_t i = 0; i < SLOT_METADATA; ++i) seqP[i] = EEPROM.read(base + i);
+
+        Config tempConfig;
+        uint8_t *p = (uint8_t*)&tempConfig;
+        for (size_t i = 0; i < sizeof(Config); i++) p[i] = EEPROM.read(base + SLOT_METADATA + i);
+
+        char calculatedChecksum = calculateChecksum(tempConfig);
+        if (calculatedChecksum == tempConfig.checksum) {
+            if (!found || seq > bestSeq) {
+                bestSeq = seq;
+                memcpy(&bestCfg, &tempConfig, sizeof(Config));
+                found = true;
+            }
+        }
     }
+
     EEPROM.end();
-    char calculatedChecksum = calculateChecksum(tempConfig);
-    if (calculatedChecksum == tempConfig.checksum) {
-        memcpy(&config, &tempConfig, sizeof(Config));
+
+    if (found) {
+        memcpy(&config, &bestCfg, sizeof(Config));
         return true;
     } else {
         setDefaultConfig();
@@ -47,13 +71,38 @@ bool loadConfig() {
 
 void saveConfig() {
 #ifdef ARDUINO
-    EEPROM.begin(sizeof(Config) + 1);
-    config.checksum = calculateChecksum(config);
-    uint8_t *p = (uint8_t*)&config;
-    for (size_t i = 0; i < sizeof(Config); i++) {
-        EEPROM.write(i, p[i]);
+    // Write atomically to rotating slot (2-slot wear-leveling)
+    const size_t SLOT_METADATA = sizeof(uint32_t);
+    const size_t SLOT_SIZE = SLOT_METADATA + sizeof(Config);
+    const int SLOTS = 2;
+    EEPROM.begin(SLOT_SIZE * SLOTS + 8);
+
+    // Read current seq values
+    uint32_t seqs[SLOTS] = {0};
+    for (int s = 0; s < SLOTS; ++s) {
+        size_t base = s * SLOT_SIZE;
+        uint32_t seq = 0;
+        uint8_t *seqP = (uint8_t*)&seq;
+        for (size_t i = 0; i < SLOT_METADATA; ++i) seqP[i] = EEPROM.read(base + i);
+        seqs[s] = seq;
     }
+
+    int target = (seqs[0] <= seqs[1]) ? 0 : 1; // write to the older slot (or slot 0 if equal)
+    uint32_t nextSeq = (seqs[target] == 0xFFFFFFFF) ? 1 : seqs[target] + 1;
+
+    config.checksum = calculateChecksum(config);
+    size_t base = target * SLOT_SIZE;
+
+    noInterrupts();
+    // write seq
+    uint8_t *seqP = (uint8_t*)&nextSeq;
+    for (size_t i = 0; i < SLOT_METADATA; ++i) EEPROM.write(base + i, seqP[i]);
+    // write config
+    uint8_t *p = (uint8_t*)&config;
+    for (size_t i = 0; i < sizeof(Config); ++i) EEPROM.write(base + SLOT_METADATA + i, p[i]);
+    ESP.wdtFeed();
     EEPROM.commit();
+    interrupts();
     EEPROM.end();
 #else
     // Native build: no EEPROM. Do nothing.

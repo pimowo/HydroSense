@@ -84,7 +84,16 @@ void ultrasonicTask() {
                     // simple sort
                     for (int i = 0; i < validCount-1; ++i) for (int j = 0; j < validCount-i-1; ++j) if (tmp[j] > tmp[j+1]) { int t = tmp[j]; tmp[j]=tmp[j+1]; tmp[j+1]=t; }
                     int median = (validCount % 2 == 0) ? ((tmp[validCount/2 -1] + tmp[validCount/2]) / 2) : tmp[validCount/2];
-                    us_resultDistance = median;
+                    // If we have more than 2 samples, compute trimmed mean (remove min/max) for stability
+                    if (validCount > 2) {
+                        long sum = 0;
+                        for (int i = 1; i < validCount-1; ++i) sum += tmp[i];
+                        int trimmedCount = validCount - 2;
+                        int trimmedMean = (int)(sum / trimmedCount);
+                        us_resultDistance = trimmedMean;
+                    } else {
+                        us_resultDistance = median;
+                    }
                 }
                 us_resultReady = true;
                 // Apply range check and smoothing (EMA) to produce a stable measurement

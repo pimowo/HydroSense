@@ -199,3 +199,30 @@ void setupWebServer() {
     server.on("/factory-reset", HTTP_POST, [](){ server.send(200, "text/plain", "Resetting to factory defaults..."); delay(200); factoryReset(); });
     server.begin();
 }
+
+// Exponential backoff for WiFi reconnect attempts
+void handleWiFiBackoff() {
+    static unsigned long backoffDelay = 5000; // start 5s
+    static int attempts = 0;
+    const unsigned long MAX_DELAY = 300000; // 5 minutes
+
+    if (WiFi.status() == WL_CONNECTED) {
+        // reset backoff on success
+        attempts = 0;
+        backoffDelay = 5000;
+        return;
+    }
+
+    unsigned long now = millis();
+    if (now - timers.lastWiFiAttempt < backoffDelay) return;
+
+    timers.lastWiFiAttempt = now;
+    attempts++;
+    DEBUG_PRINTF("WiFi reconnect attempt %d, delay %lu\n", attempts, backoffDelay);
+    WiFi.begin();
+
+    // calculate next delay (exponential, capped)
+    unsigned long next = backoffDelay * 2UL;
+    if (next > MAX_DELAY) next = MAX_DELAY;
+    backoffDelay = next;
+}

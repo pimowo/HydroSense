@@ -406,12 +406,8 @@ void loop() {
         timers.lastOTACheck = currentMillis;  // Aktualizacja znacznika czasu ostatniego sprawdzenia OTA
     }
 
-    // ZARZĄDZANIE POŁĄCZENIEM
-    if (WiFi.status() != WL_CONNECTED && (currentMillis - timers.lastWiFiAttempt >= WIFI_RETRY_INTERVAL)) {
-        timers.lastWiFiAttempt = currentMillis;
-        DEBUG_PRINT(F("Brak połączenia WiFi - próba ponownego połączenia..."));
-        WiFi.begin();
-    }
+    // ZARZĄDZANIE POŁĄCZENIEM (z backoffem)
+    handleWiFiBackoff();
 
     if (!mqtt.isConnected() && 
         (currentMillis - timers.lastMQTTRetry >= MQTT_RETRY_INTERVAL)) {
