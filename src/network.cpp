@@ -58,6 +58,32 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
                     el.innerHTML = html;
                 }).catch(err=>{ el.innerHTML = '<div class="muted">Błąd skanowania</div>'; });
             }
+            // Form submit via fetch with client-side validation and feedback
+            document.addEventListener('DOMContentLoaded', function(){
+                const form = document.getElementById('config-form');
+                if(!form) return;
+                form.addEventListener('submit', function(ev){
+                    ev.preventDefault();
+                    const status = document.getElementById('status-msg');
+                    status.innerHTML = '';
+                    const data = new FormData(form);
+                    const port = parseInt(data.get('mqtt_port')||0,10);
+                    const tankEmpty = parseInt(data.get('tank_empty')||0,10);
+                    const tankFull = parseInt(data.get('tank_full')||0,10);
+                    // basic validation
+                    if (!(port >=1 && port <= 65535)) { status.innerHTML = '<div class="muted" style="color:#ff8a8a">Nieprawidłowy port MQTT (1-65535)</div>'; return; }
+                    if (!(tankEmpty > tankFull)) { status.innerHTML = '<div class="muted" style="color:#ff8a8a">"tank_empty" musi być większe niż "tank_full"</div>'; return; }
+                    // send via fetch
+                    status.innerHTML = '<div class="muted">Wysyłanie...</div>';
+                    fetch('/save', { method:'POST', body: new URLSearchParams(data) }).then(r=>r.json()).then(obj=>{
+                        if(obj && obj.status === 'ok'){
+                            status.innerHTML = '<div style="color:#7bd389">'+(obj.message||'Zapisano')+'</div>';
+                        } else {
+                            status.innerHTML = '<div style="color:#ff8a8a">'+(obj?obj.message:'Błąd serwera')+'</div>';
+                        }
+                    }).catch(err=>{ status.innerHTML = '<div style="color:#ff8a8a">Błąd połączenia</div>'; });
+                });
+            });
         </script>
     </head>
     <body>
@@ -80,7 +106,7 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
                     <div class="status"><div style="width:10px;height:10px;border-radius:50%;background:var(--accent)"></div><div>%MQTT_STATUS%</div><div style="margin-left:auto;color:var(--muted)">%MQTT_STATUS_CLASS%</div></div>
 
                     <div style="margin-top:12px">
-                        <form method='POST' action='/save'>
+                        <form id='config-form' method='POST' action='/save'>
                             <div style="margin-bottom:12px">
                                 <label>SSID (opcjonalne)</label>
                                 <input type='text' name='wifi_ssid' placeholder='Pozostaw puste aby użyć zapisanych danych'>
@@ -135,6 +161,7 @@ const char CONFIG_PAGE[] PROGMEM = R"rawliteral(
                                 <button type='button' class='btn ghost' onclick="toggle('wifi-networks')">Pokaż sieci Wi‑Fi</button>
                                 <div style="margin-left:auto" class="muted">%SOFTWARE_VERSION%</div>
                             </div>
+                            <div id='status-msg' style='margin-top:10px'></div>
                         </form>
                     </div>
 
@@ -292,12 +319,25 @@ void handleSave() {
 
     saveConfig();
 
+    String wifi_ssid = server.arg("wifi_ssid");
+    String wifi_pass = server.arg("wifi_pass");
+
+    if (wifi_ssid.length() > 0) {
+        // Start connecting immediately with provided credentials (not persisted)
+        WiFi.mode(WIFI_STA);
+        WiFi.begin(wifi_ssid.c_str(), wifi_pass.c_str());
+        timers.lastWiFiAttempt = millis();
+        DEBUG_PRINT("Rozpoczęto łączenie do podanej sieci WiFi");
+    }
+
     if (needMqttReconnect) {
         if (mqtt.isConnected()) mqtt.disconnect();
         connectMQTT();
     }
 
-    server.send(204);
+    // Respond with JSON so the client can show a message without reloading
+    String resp = "{\"status\":\"ok\",\"message\":\"Ustawienia zapisane\"}";
+    server.send(200, "application/json", resp);
 }
 
 void handleDoUpdate() {
